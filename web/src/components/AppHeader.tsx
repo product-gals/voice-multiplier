@@ -1,0 +1,41 @@
+import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
+
+type NavLink = { label: string; href?: string; active?: boolean };
+
+export function AppHeader({ active }: { active?: "generate" | "library" | "voice" }) {
+  const links: NavLink[] = [
+    { label: "Generate", href: "/", active: active === "generate" },
+    { label: "Library", active: active === "library" },
+    { label: "Voice", href: "/voice", active: active === "voice" },
+  ];
+
+  return (
+    <header className="border-b border-zinc-200 dark:border-zinc-800">
+      <div className="mx-auto max-w-5xl px-6 py-4 flex items-center justify-between">
+        <Link href="/" className="font-semibold tracking-tight">
+          Voice Multiplier
+        </Link>
+        <nav className="text-sm flex items-center gap-6">
+          {links.map((link) => {
+            const cls = link.active
+              ? "text-zinc-900 dark:text-zinc-50 font-medium"
+              : link.href
+              ? "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+              : "text-zinc-300 dark:text-zinc-700 cursor-default";
+            return link.href ? (
+              <Link key={link.label} href={link.href} className={cls}>
+                {link.label}
+              </Link>
+            ) : (
+              <span key={link.label} className={cls} title="Not built yet">
+                {link.label}
+              </span>
+            );
+          })}
+          <ThemeToggle />
+        </nav>
+      </div>
+    </header>
+  );
+}
