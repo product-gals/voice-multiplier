@@ -222,41 +222,40 @@ export const SAMPLE_PROFILE: VoiceProfile = {
   created_at: "2026-05-13T10:00:00Z",
   updated_at: "2026-05-13T10:00:00Z",
   identity: {
-    display_name: "Meagan",
-    role: "fractional product leader for SaaS startups",
-    audience: "seed-to-Series-B founders and product leaders",
-    topics: ["fractional work", "product management", "SaaS activation", "ICP"],
+    display_name: "Alex Rivera",
+    role: "indie hacker building developer tools",
+    audience: "other indie hackers and small SaaS founders",
+    topics: ["bootstrapping", "developer tools", "indie SaaS", "building in public"],
     primary_platform: "linkedin",
   },
   voice: {
-    tone: ["direct", "contrarian", "reflective"],
+    tone: ["direct", "earnest", "playful"],
     energy: "measured",
     pov: "first_person",
-    formality: "casual_to_professional",
+    formality: "casual",
     hallmarks: [
-      "sets up conventional wisdom, then flips it",
-      "uses specific numbers as proof",
-      "first-person admissions over abstractions",
+      "shares concrete numbers from real projects",
+      "admits mistakes openly",
+      "writes like talking to a friend",
       "ends on a one-line turn",
     ],
   },
   rhythm: {
-    sentence_length: "short_staccato",
-    fragments: "heavy",
+    sentence_length: "mixed",
+    fragments: "light",
     paragraph_length: "short_beats",
   },
   vocabulary: {
     use: [
-      { term: "fractional", reason: "core identity" },
-      { term: "activation", reason: "key topic" },
-      { term: "discovery", reason: "signature concept" },
-      { term: "ICP", reason: "recurring frame" },
+      { term: "shipping", reason: "core identity" },
+      { term: "MRR", reason: "key metric" },
+      { term: "indie", reason: "signature concept" },
     ],
     avoid: AI_SLOP_DEFAULTS,
   },
   punctuation: {
-    em_dash: "forbidden",
-    exclamation: "forbidden",
+    em_dash: "sparing",
+    exclamation: "sparing",
     ellipsis: "sparing",
     all_lowercase: false,
     oxford_comma: "no_preference",
@@ -265,29 +264,28 @@ export const SAMPLE_PROFILE: VoiceProfile = {
   signature_moves: [
     {
       pattern: "specific_number_or_claim",
-      example: "I audited 12 SaaS funnels. 9 had the same leak.",
+      example: "Made $4k MRR in 3 months. Here's what I'd do differently.",
     },
     {
       pattern: "first_person_admission",
-      example: "I ignored the work my client hired me for. For three weeks.",
+      example: "I shipped the wrong feature first. Twice.",
     },
     {
       pattern: "setup_then_flip",
-      example: "Every fractional pitch sells freedom. That wasn't my why.",
+      example: "Everyone says you need a niche. I picked the broadest market on purpose.",
     },
   ],
   nouns_library: [
-    { noun: "Prodfolio", context: "the product I'm building" },
+    { noun: "my Stripe dashboard", context: "recurring proof point" },
     {
-      noun: "the founder who hired me to build a roadmap",
-      context: "recurring story",
+      noun: "the side project that became my full-time gig",
+      context: "origin story",
     },
-    { noun: "12 SaaS audits", context: "track-record proof point" },
   ],
   example_posts: [
     {
       id: "post_sample_1",
-      text: "I've been thinking a lot about why most product roadmaps fail. After working with 12 SaaS companies as a fractional product leader, I've noticed that the roadmaps that fail aren't the ones with the wrong features — they're the ones built without understanding the ICP.",
+      text: "I spent 6 months building a CLI tool nobody asked for. It now does $2k MRR. Turns out people pay for things that save them friction, not for things that look impressive in a demo.",
       platform_of_origin: "linkedin",
       use_as_exemplar: true,
       added_at: "2026-05-13T10:05:00Z",
@@ -370,6 +368,18 @@ export function loadProfile(): VoiceProfile {
     return SAMPLE_PROFILE;
   } catch {
     return SAMPLE_PROFILE;
+  }
+}
+
+export function hasStoredProfile(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as VoiceProfile;
+    return parsed.version === 1;
+  } catch {
+    return false;
   }
 }
 

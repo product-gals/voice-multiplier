@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  hasStoredProfile,
   loadProfile,
   Target,
   TARGETS,
@@ -34,15 +36,20 @@ const INITIAL_STATES: Record<Target, CardState> = {
 };
 
 export function Generator() {
+  const router = useRouter();
   const [source, setSource] = useState("");
   const [profile, setProfile] = useState<VoiceProfile | null>(null);
   const [model, setModel] = useState<ModelId>("claude-sonnet-4-6");
   const [states, setStates] = useState<Record<Target, CardState>>(INITIAL_STATES);
 
   useEffect(() => {
+    if (!hasStoredProfile()) {
+      router.replace("/onboarding");
+      return;
+    }
     setProfile(loadProfile());
     setModel(loadModel());
-  }, []);
+  }, [router]);
 
   const handleModelChange = (next: ModelId) => {
     setModel(next);

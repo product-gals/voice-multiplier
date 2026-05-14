@@ -27,6 +27,7 @@ import {
   Tone,
   TONES,
   VoiceProfile,
+  hasStoredProfile,
   humanize,
   loadProfile,
   resetProfile,
@@ -66,9 +67,13 @@ export function VoiceProfileEditor() {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!hasStoredProfile()) {
+      router.replace("/onboarding");
+      return;
+    }
     setProfile(loadProfile());
     setObservations(loadAndClearObservations());
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (profile) saveProfile(profile);
