@@ -12,6 +12,7 @@ import {
 } from "@/lib/voice-profile";
 import { loadModel, ModelId, saveModel } from "@/lib/model-settings";
 import { ModelSelector } from "@/components/ModelSelector";
+import { PENDING_SOURCE_KEY } from "@/lib/handoff";
 
 interface PlatformResult {
   output: string;
@@ -49,6 +50,15 @@ export function Generator() {
     }
     setProfile(loadProfile());
     setModel(loadModel());
+    try {
+      const pending = window.sessionStorage.getItem(PENDING_SOURCE_KEY);
+      if (pending) {
+        setSource(pending);
+        window.sessionStorage.removeItem(PENDING_SOURCE_KEY);
+      }
+    } catch {
+      // ignore
+    }
   }, [router]);
 
   const handleModelChange = (next: ModelId) => {
