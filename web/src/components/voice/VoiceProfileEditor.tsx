@@ -582,52 +582,8 @@ export function VoiceProfileEditor() {
         )}
       </SectionShell>
 
-      {/* EXAMPLE POSTS */}
-      <SectionShell
-        title="Example posts"
-        subtitle="Posts that train your voice profile."
-        meta={
-          <span>{profile.example_posts.length} on file · upload coming soon</span>
-        }
-      >
-        {profile.example_posts.length === 0 ? (
-          <p className="text-xs text-zinc-400 italic">No posts yet.</p>
-        ) : (
-          <ul className="space-y-3">
-            {profile.example_posts.map((p) => (
-              <li
-                key={p.id}
-                className="border border-zinc-200 dark:border-zinc-800 rounded-md p-3 flex gap-3 items-start"
-              >
-                <div className="flex-1 text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">
-                  {p.text}
-                  <div className="mt-2 text-[11px] text-zinc-400">
-                    {p.platform_of_origin && (
-                      <span>
-                        from {PLATFORM_LABELS[p.platform_of_origin as Platform] ?? p.platform_of_origin} ·{" "}
-                      </span>
-                    )}
-                    added {new Date(p.added_at).toLocaleDateString()}
-                  </div>
-                </div>
-                <button
-                  onClick={() =>
-                    update({
-                      example_posts: profile.example_posts.filter(
-                        (x) => x.id !== p.id
-                      ),
-                    })
-                  }
-                  className="text-xs text-zinc-400 hover:text-rose-600"
-                  aria-label="Remove post"
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </SectionShell>
+      {/* FAVORITE POSTS */}
+      <FavoritePostsSection profile={profile} update={update} />
 
       {/* PLATFORM RULES */}
       <SectionShell
@@ -779,6 +735,159 @@ function Badge({
     >
       {children}
     </span>
+  );
+}
+
+function FavoritePostsSection({
+  profile,
+  update,
+}: {
+  profile: VoiceProfile;
+  update: (patch: Partial<VoiceProfile>) => void;
+}) {
+  const [draftText, setDraftText] = useState("");
+  const [draftNotes, setDraftNotes] = useState("");
+
+  const exemplarCount = profile.example_posts.filter(
+    (p) => p.use_as_exemplar
+  ).length;
+
+  const handleAdd = () => {
+    const text = draftText.trim();
+    if (text.length < 20) return;
+    const id = `post_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+    update({
+      example_posts: [
+        {
+          id,
+          text,
+          notes: draftNotes.trim() || undefined,
+          use_as_exemplar: true,
+          added_at: new Date().toISOString(),
+        },
+        ...profile.example_posts,
+      ],
+    });
+    setDraftText("");
+    setDraftNotes("");
+  };
+
+  const togglePost = (id: string) => {
+    update({
+      example_posts: profile.example_posts.map((p) =>
+        p.id === id ? { ...p, use_as_exemplar: !p.use_as_exemplar } : p
+      ),
+    });
+  };
+
+  const updateNotes = (id: string, notes: string) => {
+    update({
+      example_posts: profile.example_posts.map((p) =>
+        p.id === id ? { ...p, notes: notes.trim() || undefined } : p
+      ),
+    });
+  };
+
+  const removePost = (id: string) => {
+    update({
+      example_posts: profile.example_posts.filter((x) => x.id !== id),
+    });
+  };
+
+  return (
+    <SectionShell
+      title="Favorite posts"
+      subtitle="Paste 3–10 posts you'd want Ozzy to write like. They go into every system prompt as always-on voice exemplars (separate from your ingested corpus)."
+      meta={
+        <span>
+          {exemplarCount} used as exemplar
+          {exemplarCount === 1 ? "" : "s"} · {profile.example_posts.length} on file
+        </span>
+      }
+    >
+      <div className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-3 space-y-2">
+        <Field label="Add a post">
+          <TextArea
+            value={draftText}
+            onChange={(e) => setDraftText(e.target.value)}
+            placeholder="Paste a LinkedIn post you'd want Ozzy to write like…"
+            rows={5}
+          />
+        </Field>
+        <Field
+          label="Optional note"
+          hint="Why this post? What makes it work? Ozzy will see this."
+        >
+          <TextInput
+            value={draftNotes}
+            onChange={(e) => setDraftNotes(e.target.value)}
+            placeholder="e.g., this is the cadence I want — short beats, ends on a turn"
+          />
+        </Field>
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <p className="text-[11px] text-zinc-400">
+            Minimum 20 characters. Stored in this browser only.
+          </p>
+          <button
+            onClick={handleAdd}
+            disabled={draftText.trim().length < 20}
+            className="rounded-full bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 px-3 py-1 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          >
+            Add post
+          </button>
+        </div>
+      </div>
+
+      {profile.example_posts.length === 0 ? (
+        <p className="text-xs text-zinc-400 italic">No favorites yet.</p>
+      ) : (
+        <ul className="space-y-3">
+          {profile.example_posts.map((p) => (
+            <li
+              key={p.id}
+              className={`border rounded-md p-3 ${
+                p.use_as_exemplar
+                  ? "border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950"
+                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/30 opacity-70"
+              }`}
+            >
+              <div className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap mb-2">
+                {p.text}
+              </div>
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-900 text-[11px]">
+                <label className="inline-flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={p.use_as_exemplar}
+                    onChange={() => togglePost(p.id)}
+                    className="accent-zinc-900 dark:accent-zinc-100"
+                  />
+                  <span>Use as exemplar</span>
+                </label>
+                <span className="text-zinc-400">
+                  added {new Date(p.added_at).toLocaleDateString()}
+                </span>
+                <button
+                  onClick={() => removePost(p.id)}
+                  className="text-zinc-400 hover:text-rose-600 ml-auto"
+                  aria-label="Remove post"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="mt-2">
+                <TextInput
+                  value={p.notes ?? ""}
+                  onChange={(e) => updateNotes(p.id, e.target.value)}
+                  placeholder="Optional note — why this one?"
+                  className="text-[11px]"
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionShell>
   );
 }
 

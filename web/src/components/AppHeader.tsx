@@ -3,10 +3,14 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 type NavLink = { label: string; href?: string; active?: boolean };
 
-export function AppHeader({ active }: { active?: "generate" | "library" | "voice" }) {
+export function AppHeader({
+  active,
+}: {
+  active?: "generate" | "write" | "voice";
+}) {
   const links: NavLink[] = [
+    { label: "Write", href: "/write", active: active === "write" },
     { label: "Generate", href: "/", active: active === "generate" },
-    { label: "Library", active: active === "library" },
     { label: "Voice", href: "/voice", active: active === "voice" },
   ];
 
