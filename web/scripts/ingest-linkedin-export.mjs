@@ -29,6 +29,21 @@ function pick(row, ...keys) {
   return undefined;
 }
 
+// LinkedIn's Shares.csv wraps each paragraph of the post body in literal `"`
+// characters — an export-format artifact, NOT quotes the author wrote. After
+// csv-parse strips the outer field quotes, every interior line still has stray
+// leading/trailing `"` that need stripping. Inline quotes (mid-line) are real
+// author content — leave them alone. Then collapse runs of blank lines that
+// the wrapper pattern leaves behind.
+function cleanLinkedInText(raw) {
+  return raw
+    .split("\n")
+    .map((line) => line.replace(/^"+/, "").replace(/"+$/, ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function toIso(dateStr) {
   if (!dateStr) return new Date(0).toISOString();
   // LinkedIn format is typically "2024-03-15 18:20:00" or ISO; both parse.
@@ -73,11 +88,12 @@ async function main() {
   let skippedTooShort = 0;
 
   rows.forEach((row, i) => {
-    const text = pick(row, "ShareCommentary", "Commentary", "Content");
-    if (!text) {
+    const rawText = pick(row, "ShareCommentary", "Commentary", "Content");
+    if (!rawText) {
       skippedNoText++;
       return;
     }
+    const text = cleanLinkedInText(rawText);
     if (text.length < 20) {
       skippedTooShort++;
       return;

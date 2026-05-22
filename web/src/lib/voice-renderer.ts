@@ -84,6 +84,22 @@ export function renderVoiceProfile(profile: VoiceProfile): string {
     lines.push("");
   }
 
+  const favorites = profile.example_posts.filter((p) => p.use_as_exemplar);
+  if (favorites.length > 0) {
+    lines.push(
+      `FAVORITE POSTS — the writer hand-picked these as voice exemplars. Match THIS cadence, hook style, and rhythm. Do not copy phrases or anecdotes from them; treat as voice reference only.`
+    );
+    favorites.forEach((p, i) => {
+      lines.push("");
+      lines.push(`[favorite ${i + 1}]`);
+      lines.push(p.text.trim());
+      if (p.notes && p.notes.trim().length > 0) {
+        lines.push(`(writer's note: ${p.notes.trim()})`);
+      }
+    });
+    lines.push("");
+  }
+
   return lines.join("\n").trim();
 }
 
