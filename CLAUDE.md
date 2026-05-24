@@ -21,13 +21,17 @@ npm run lint   # eslint (config: web/eslint.config.mjs)
 
 There is no test suite.
 
-Anthropic API key is required at runtime. Create `web/.env.local`:
+Required env vars at runtime — put them in `web/.env.local`:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
+NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...        # only for service-role server jobs; never exposed to the browser
+ALLOWED_EMAILS=you@example.com,teammate@example.com   # optional; if unset, all emails can sign in
 ```
 
-API routes return a 503 with a clear message if it's missing.
+API routes return a 503 with a clear message if `ANTHROPIC_API_KEY` is missing, and a 401 if the request isn't authenticated.
 
 ## Architecture
 
@@ -65,7 +69,19 @@ The model **must** return JSON matching `{ output, fit_score, fit_flag, char_cou
 
 ### Rate limiting
 
-[web/src/lib/rate-limit.ts](web/src/lib/rate-limit.ts) is an **in-memory** sliding-window limiter (6 req / 30s per IP). The file comment is explicit: single-instance only. On Vercel each serverless instance has its own bucket, so this is a prototype safety net, not real protection. Don't treat it as production-grade.
+[web/src/lib/rate-limit.ts](web/src/lib/rate-limit.ts) is an **in-memory** sliding-window limiter (6 req / 30s). Keyed by `user.id` when a signed-in user is present, falling back to client IP. The file comment is explicit: single-instance only. On Vercel each serverless instance has its own bucket, so this is a prototype safety net, not real protection. Don't treat it as production-grade.
+
+### Auth
+
+Supabase magic-link sign-in. Every page and API route is **protected by default** — anonymous users get redirected to `/sign-in?next=<original-path>` (pages) or a `401 { error: "Unauthorized" }` (APIs). The only public routes are `/sign-in` and `/auth/*`, listed in [web/src/middleware.ts](web/src/middleware.ts) as `PUBLIC_PAGES` / `PUBLIC_PATH_PREFIXES`. When adding a new page or API, you don't need to do anything to protect it; you only need to touch middleware if you want it to be **public**.
+
+Defense-in-depth: each API route also calls `supabase.auth.getUser()` itself and returns 401 if absent. Per Supabase's docs, never trust middleware alone for authorization — middleware can be bypassed in some deploy configurations.
+
+Allowlist: [web/src/lib/auth-allowlist.ts](web/src/lib/auth-allowlist.ts) reads `ALLOWED_EMAILS` (comma-separated, case-insensitive). Enforced in [web/src/app/auth/callback/route.ts](web/src/app/auth/callback/route.ts) after `exchangeCodeForSession` succeeds — disallowed emails are signed back out and bounced to `/sign-in?error=not-allowed`. If `ALLOWED_EMAILS` is unset/empty, the allowlist is disabled (dev convenience). API routes also re-check via `isAllowed(user.email)` so an allowlist change takes effect on the next request even for users with an existing session.
+
+The sign-in page threads `?next=<path>` through the magic-link `emailRedirectTo`, so users land back where they were trying to go. After sign-out, the next nav triggers the middleware redirect to `/sign-in` automatically.
+
+The voice profile is still in `localStorage` and is **not cleared on sign-out** — moving per-user data into Supabase is the next milestone.
 
 ### Regeneration with feedback
 

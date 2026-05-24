@@ -11,6 +11,8 @@ import { VoiceProfile } from "@/lib/voice-profile";
 import { isValidModel, ModelId } from "@/lib/model-settings";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { getRecentPosts, searchCorpus, ScoredPost } from "@/lib/corpus";
+import { createClient } from "@/lib/supabase/server";
+import { isAllowed } from "@/lib/auth-allowlist";
 
 export const runtime = "nodejs";
 
@@ -93,8 +95,19 @@ export async function POST(request: Request) {
     );
   }
 
+  // Defense-in-depth: middleware already gates this route, but we re-verify
+  // here in case middleware is bypassed (Supabase docs explicitly recommend
+  // this pattern — never trust middleware alone for authorization).
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !isAllowed(user.email)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const ip = getClientIp(request.headers);
-  const rateLimit = checkRateLimit(ip);
+  const rateLimit = checkRateLimit(ip, user.id);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       {
