@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AuthStatus } from "@/components/AuthStatus";
 
 type NavLink = { label: string; href?: string; active?: boolean };
 
@@ -37,6 +38,8 @@ export function AppHeader({
               </span>
             );
           })}
+          <span className="h-4 w-px bg-zinc-200 dark:bg-zinc-800" />
+          <AuthStatus />
           <ThemeToggle />
         </nav>
       </div>
