@@ -12,7 +12,12 @@ function SignInForm() {
   );
   const [errorMsg, setErrorMsg] = useState("");
   const searchParams = useSearchParams();
-  const authError = searchParams.get("error") === "auth";
+  const errorParam = searchParams.get("error");
+  const authError = errorParam === "auth";
+  const notAllowedError = errorParam === "not-allowed";
+  // Preserve the destination the user was originally trying to reach so we
+  // can bounce back after the magic-link round-trip.
+  const nextPath = searchParams.get("next") ?? "/";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,10 +25,12 @@ function SignInForm() {
     setErrorMsg("");
 
     const supabase = createClient();
+    const callbackUrl = new URL("/auth/callback", window.location.origin);
+    callbackUrl.searchParams.set("next", nextPath);
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: callbackUrl.toString(),
       },
     });
 
@@ -98,6 +105,13 @@ function SignInForm() {
       {authError && (
         <p className="text-sm text-red-600 dark:text-red-400 text-center">
           Sign-in failed. Please try again.
+        </p>
+      )}
+
+      {notAllowedError && (
+        <p className="text-sm text-red-600 dark:text-red-400 text-center">
+          That email isn&apos;t on the access list yet. Reach out to the app
+          owner if you think this is a mistake.
         </p>
       )}
     </div>

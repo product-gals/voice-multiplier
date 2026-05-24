@@ -5,6 +5,8 @@ import {
   buildExtractorUser,
   OnboardingIntake,
 } from "@/lib/onboarding-prompts";
+import { createClient } from "@/lib/supabase/server";
+import { isAllowed } from "@/lib/auth-allowlist";
 
 export const runtime = "nodejs";
 
@@ -41,6 +43,17 @@ export async function POST(request: Request) {
       },
       { status: 503 }
     );
+  }
+
+  // Defense-in-depth: middleware already gates this route, but we re-verify
+  // here in case middleware is bypassed (Supabase docs explicitly recommend
+  // this pattern — never trust middleware alone for authorization).
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !isAllowed(user.email)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let body: unknown;

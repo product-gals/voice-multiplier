@@ -12,11 +12,14 @@ export type RateLimitResult =
   | { allowed: true }
   | { allowed: false; retryAfterSeconds: number };
 
-export function checkRateLimit(ip: string): RateLimitResult {
+// Pass a userId for signed-in callers so limits are per-account instead of
+// per-IP (multiple users behind one NAT shouldn't share a bucket).
+export function checkRateLimit(ip: string, userId?: string): RateLimitResult {
+  const key = userId ? `user:${userId}` : `ip:${ip}`;
   const now = Date.now();
   const cutoff = now - WINDOW_MS;
 
-  const recent = (buckets.get(ip) ?? []).filter((t) => t > cutoff);
+  const recent = (buckets.get(key) ?? []).filter((t) => t > cutoff);
 
   if (recent.length >= MAX_REQUESTS_PER_WINDOW) {
     const oldest = recent[0];
@@ -28,7 +31,7 @@ export function checkRateLimit(ip: string): RateLimitResult {
   }
 
   recent.push(now);
-  buckets.set(ip, recent);
+  buckets.set(key, recent);
   return { allowed: true };
 }
 
