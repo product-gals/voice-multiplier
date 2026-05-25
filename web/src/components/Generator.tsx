@@ -3,8 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  hasStoredProfile,
-  loadProfile,
+  fetchProfile,
   Target,
   TARGETS,
   TARGET_LABELS,
@@ -44,11 +43,21 @@ export function Generator() {
   const [states, setStates] = useState<Record<Target, CardState>>(INITIAL_STATES);
 
   useEffect(() => {
-    if (!hasStoredProfile()) {
-      router.replace("/onboarding");
-      return;
-    }
-    setProfile(loadProfile());
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await fetchProfile();
+        if (cancelled) return;
+        if (!p) {
+          router.replace("/onboarding");
+          return;
+        }
+        setProfile(p);
+      } catch {
+        if (!cancelled) router.replace("/onboarding");
+        return;
+      }
+    })();
     setModel(loadModel());
     try {
       const pending = window.sessionStorage.getItem(PENDING_SOURCE_KEY);
@@ -59,6 +68,9 @@ export function Generator() {
     } catch {
       // ignore
     }
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const handleModelChange = (next: ModelId) => {

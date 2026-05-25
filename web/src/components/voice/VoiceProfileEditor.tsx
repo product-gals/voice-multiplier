@@ -20,6 +20,7 @@ import {
   POVS,
   PunctuationFreq,
   PUNCTUATION_FREQS,
+  SAMPLE_PROFILE,
   SentenceLength,
   SENTENCE_LENGTHS,
   TARGET_LABELS,
@@ -27,11 +28,10 @@ import {
   Tone,
   TONES,
   VoiceProfile,
-  hasStoredProfile,
+  deleteProfile,
+  fetchProfile,
   humanize,
-  loadProfile,
-  resetProfile,
-  saveProfile,
+  putProfile,
 } from "@/lib/voice-profile";
 import { ChipList, ToggleChip } from "@/components/voice/Chip";
 import {
@@ -67,16 +67,34 @@ export function VoiceProfileEditor() {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!hasStoredProfile()) {
-      router.replace("/onboarding");
-      return;
-    }
-    setProfile(loadProfile());
-    setObservations(loadAndClearObservations());
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await fetchProfile();
+        if (cancelled) return;
+        if (!p) {
+          router.replace("/onboarding");
+          return;
+        }
+        setProfile(p);
+        setObservations(loadAndClearObservations());
+      } catch {
+        if (!cancelled) router.replace("/onboarding");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
+  // Auto-save on edit, debounced. Server is the source of truth — every change
+  // round-trips through /api/profile so other devices/tabs see it after refresh.
   useEffect(() => {
-    if (profile) saveProfile(profile);
+    if (!profile) return;
+    const t = setTimeout(() => {
+      void putProfile(profile);
+    }, 500);
+    return () => clearTimeout(t);
   }, [profile]);
 
   if (!profile) {
@@ -134,7 +152,9 @@ export function VoiceProfileEditor() {
         "Reset to the sample profile? Your current edits will be lost."
       )
     ) {
-      setProfile(resetProfile());
+      // setProfile triggers the debounced auto-save useEffect, which writes
+      // SAMPLE_PROFILE to the server.
+      setProfile({ ...SAMPLE_PROFILE, updated_at: new Date().toISOString() });
     }
   };
 
@@ -189,13 +209,16 @@ export function VoiceProfileEditor() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (
       window.confirm(
         "Delete this voice profile? You'll be sent to onboarding to start fresh. This cannot be undone."
       )
     ) {
-      resetProfile();
+      // Clear local state first so the debounced auto-save doesn't race the
+      // delete and re-create the row.
+      setProfile(null);
+      await deleteProfile();
       router.push("/onboarding");
     }
   };
@@ -218,7 +241,7 @@ export function VoiceProfileEditor() {
             Voice profile
           </h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-            Edit anything below. Changes save automatically to this browser.
+            Edit anything below. Changes save automatically to your account.
           </p>
         </div>
         <div className="flex items-center gap-4 text-xs">
@@ -698,7 +721,7 @@ export function VoiceProfileEditor() {
             Delete profile
           </h3>
           <p className="text-xs text-rose-600 dark:text-rose-400 mt-0.5">
-            Wipes this profile from your browser and sends you to onboarding.
+            Wipes this profile from your account and sends you to onboarding.
           </p>
         </div>
         <button
@@ -826,7 +849,7 @@ function FavoritePostsSection({
         </Field>
         <div className="flex items-center justify-between gap-3 pt-1">
           <p className="text-[11px] text-zinc-400">
-            Minimum 20 characters. Stored in this browser only.
+            Minimum 20 characters.
           </p>
           <button
             onClick={handleAdd}

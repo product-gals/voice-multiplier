@@ -356,47 +356,100 @@ export const SAMPLE_PROFILE: VoiceProfile = {
   notes: "",
 };
 
-const STORAGE_KEY = "voice_profile_v1";
+// Profile lives in Supabase now (table: voice_profiles, one row per auth.user).
+// Helpers below all hit /api/profile, which RLS-gates to the signed-in user.
+//
+// Legacy: profiles used to live in localStorage under `voice_profile_v1`.
+// `migrateLegacyLocalProfile()` is a one-time shim that uploads a localStorage
+// profile and clears the key. Called automatically by fetchProfile() when the
+// server has nothing for the current user.
 
-export function loadProfile(): VoiceProfile {
-  if (typeof window === "undefined") return SAMPLE_PROFILE;
+const LEGACY_STORAGE_KEY = "voice_profile_v1";
+
+function readLegacyLocalProfile(): VoiceProfile | null {
+  if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return SAMPLE_PROFILE;
+    const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return null;
     const parsed = JSON.parse(raw) as VoiceProfile;
-    if (parsed.version === 1) return parsed;
-    return SAMPLE_PROFILE;
+    return parsed?.version === 1 ? parsed : null;
   } catch {
-    return SAMPLE_PROFILE;
+    return null;
   }
 }
 
-export function hasStoredProfile(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return false;
-    const parsed = JSON.parse(raw) as VoiceProfile;
-    return parsed.version === 1;
-  } catch {
-    return false;
-  }
-}
-
-export function saveProfile(profile: VoiceProfile): void {
+function clearLegacyLocalProfile(): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch {
-    // quota or serialization failure — no-op for v0
+    // ignore
   }
 }
 
-export function resetProfile(): VoiceProfile {
-  if (typeof window !== "undefined") {
-    window.localStorage.removeItem(STORAGE_KEY);
+/**
+ * Returns the signed-in user's profile, or null if they have none yet
+ * (→ component should redirect to /onboarding).
+ *
+ * If the server has nothing but localStorage holds a legacy profile, this
+ * uploads it then clears the legacy key — transparent migration on first
+ * post-auth load.
+ *
+ * 401 (not signed in) also returns null; the middleware / page-level auth
+ * gate is responsible for sending the user to /sign-in.
+ */
+export async function fetchProfile(): Promise<VoiceProfile | null> {
+  const res = await fetch("/api/profile", {
+    method: "GET",
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (res.status === 401) return null;
+  if (res.status === 404) {
+    // Server has no profile. Check the legacy localStorage slot.
+    const legacy = readLegacyLocalProfile();
+    if (legacy) {
+      const migrated = await putProfile(legacy);
+      if (migrated) clearLegacyLocalProfile();
+      return migrated;
+    }
+    return null;
   }
-  return SAMPLE_PROFILE;
+  if (!res.ok) {
+    throw new Error(`Failed to load profile (HTTP ${res.status})`);
+  }
+  const data = (await res.json()) as { profile: VoiceProfile };
+  return data.profile;
+}
+
+/**
+ * Upsert the profile for the signed-in user. Returns the saved profile, or
+ * null if the request was rejected (401/400/etc.) so callers can fall back.
+ */
+export async function putProfile(
+  profile: VoiceProfile,
+): Promise<VoiceProfile | null> {
+  const res = await fetch("/api/profile", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ profile }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { profile: VoiceProfile };
+  return data.profile;
+}
+
+/**
+ * Delete the profile for the signed-in user. After this, fetchProfile()
+ * returns null and components should redirect to /onboarding.
+ */
+export async function deleteProfile(): Promise<boolean> {
+  const res = await fetch("/api/profile", {
+    method: "DELETE",
+    credentials: "include",
+  });
+  return res.ok;
 }
 
 export function humanize(value: string): string {
