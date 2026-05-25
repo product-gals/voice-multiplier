@@ -9,8 +9,7 @@ import {
   useState,
 } from "react";
 import {
-  hasStoredProfile,
-  loadProfile,
+  fetchProfile,
   VoiceProfile,
 } from "@/lib/voice-profile";
 import { loadModel, ModelId, saveModel } from "@/lib/model-settings";
@@ -62,13 +61,25 @@ export function Writer() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (!hasStoredProfile()) {
-      router.replace("/onboarding");
-      return;
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await fetchProfile();
+        if (cancelled) return;
+        if (!p) {
+          router.replace("/onboarding");
+          return;
+        }
+        setProfile(p);
+      } catch {
+        if (!cancelled) router.replace("/onboarding");
+      }
+    })();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing localStorage state on mount
-    setProfile(loadProfile());
     setModel(loadModel());
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   useEffect(() => {

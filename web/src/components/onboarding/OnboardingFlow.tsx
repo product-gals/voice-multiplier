@@ -10,7 +10,7 @@ import {
   TextInput,
 } from "@/components/voice/SectionShell";
 import { ChipList } from "@/components/voice/Chip";
-import { Platform, saveProfile } from "@/lib/voice-profile";
+import { Platform, putProfile } from "@/lib/voice-profile";
 import {
   buildProfileFromOnboarding,
   OnboardingExtracted,
@@ -90,7 +90,12 @@ export function OnboardingFlow() {
 
       const extracted = data.extracted as OnboardingExtracted;
       const profile = buildProfileFromOnboarding(identity, extracted);
-      saveProfile(profile);
+      const saved = await putProfile(profile);
+      if (!saved) {
+        setError("Couldn't save your profile. Check that you're signed in and try again.");
+        setStep("error");
+        return;
+      }
       saveObservations(extracted.observations ?? []);
       router.push("/voice");
     } catch (e) {
