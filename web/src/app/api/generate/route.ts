@@ -6,6 +6,7 @@ import { isValidModel, ModelId } from "@/lib/model-settings";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { isAllowed } from "@/lib/auth-allowlist";
+import { logDraft } from "@/lib/drafts-log";
 
 export const runtime = "nodejs";
 
@@ -181,6 +182,20 @@ export async function POST(request: Request) {
         { status: 502 }
       );
     }
+
+    logDraft({
+      supabase,
+      userId: user.id,
+      kind: "multiplier",
+      output: parsed.output,
+      source_post: source,
+      target: platform,
+      fit_score:
+        typeof parsed.fit_score === "number" ? parsed.fit_score : null,
+      model,
+      feedback:
+        typeof feedback === "string" && feedback.length > 0 ? feedback : null,
+    });
 
     return NextResponse.json({
       platform,
