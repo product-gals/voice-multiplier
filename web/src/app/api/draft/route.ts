@@ -10,7 +10,7 @@ import {
 import { VoiceProfile } from "@/lib/voice-profile";
 import { isValidModel, ModelId } from "@/lib/model-settings";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
-import { getRecentPosts, searchCorpus, ScoredPost } from "@/lib/corpus";
+import { getRecentUserPosts, searchUserCorpus, ScoredPost } from "@/lib/corpus";
 import { createClient } from "@/lib/supabase/server";
 import { isAllowed } from "@/lib/auth-allowlist";
 
@@ -163,10 +163,10 @@ export async function POST(request: Request) {
     // the trigger prompt. If the corpus is empty, return a friendly error so
     // the UI can tell the user to ingest first.
     try {
-      const recent = await getRecentPosts(10);
+      const recent = await getRecentUserPosts(supabase, user.id, 10);
       if (recent.length === 0) {
         analyzeError =
-          "No posts in your corpus yet. Run `npm run ingest -- /path/to/Shares.csv` from web/ after your LinkedIn export arrives, then try Analyze again.";
+          "No posts in your corpus yet. Upload your LinkedIn Shares.csv from Settings, then try Analyze again.";
       } else {
         augmentedLatestUser = buildAnalyzeTrigger(recent);
       }
@@ -182,7 +182,7 @@ export async function POST(request: Request) {
     // Per-turn BM25 retrieval. Skipped for brainstorm/analyze where exemplars
     // would muddy the conversation.
     try {
-      exemplars = await searchCorpus(latestUser.content, 5);
+      exemplars = await searchUserCorpus(supabase, user.id, latestUser.content, 5);
       augmentedLatestUser = buildOzzyUserTurn(latestUser.content, exemplars);
     } catch (e) {
       return NextResponse.json(

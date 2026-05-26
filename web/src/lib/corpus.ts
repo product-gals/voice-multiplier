@@ -1,11 +1,19 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
+// Per-user corpus over public.posts (Supabase). The BM25 index is built per
+// request from the signed-in user's rows — no module-scope cache, because the
+// cache would be shared across users which RLS protects against at the DB
+// layer but would still leak via process memory.
+//
+// For personal-scale corpora (hundreds to low thousands of posts), the per-
+// request rebuild is cheap. If the index ever shows up in a profile, we can
+// add an in-memory LRU keyed by user_id.
+
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface CorpusPost {
   id: string;
   text: string;
   createdAt: string;
-  url?: string;
+  url?: string | null;
   reactions?: number | null;
   comments?: number | null;
 }
@@ -38,30 +46,34 @@ interface CorpusIndex {
   avgDocLen: number;
 }
 
-let cached: CorpusIndex | null = null;
-let cacheLoadPromise: Promise<CorpusIndex> | null = null;
-
-function corpusPath(): string {
-  return path.join(process.cwd(), "data", "posts.json");
+interface PostRow {
+  id: string;
+  text: string;
+  created_at: string;
+  url: string | null;
+  reactions: number | null;
+  comments: number | null;
 }
 
-async function readCorpusFile(): Promise<CorpusPost[]> {
-  try {
-    const raw = await fs.readFile(corpusPath(), "utf8");
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (p): p is CorpusPost =>
-        p != null &&
-        typeof p === "object" &&
-        typeof p.id === "string" &&
-        typeof p.text === "string"
-    );
-  } catch (e: unknown) {
-    const code = (e as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT") return [];
-    throw e;
-  }
+async function fetchUserPosts(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<CorpusPost[]> {
+  const { data, error } = await supabase
+    .from("posts")
+    .select("id, text, created_at, url, reactions, comments")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`posts query failed: ${error.message}`);
+  const rows = (data ?? []) as PostRow[];
+  return rows.map((r) => ({
+    id: r.id,
+    text: r.text,
+    createdAt: r.created_at,
+    url: r.url,
+    reactions: r.reactions,
+    comments: r.comments,
+  }));
 }
 
 function buildIndex(posts: CorpusPost[]): CorpusIndex {
@@ -82,27 +94,23 @@ function buildIndex(posts: CorpusPost[]): CorpusIndex {
   return { posts, postTokens, postTermFreq, docFreq, avgDocLen };
 }
 
-export async function loadCorpus(): Promise<CorpusIndex> {
-  if (cached) return cached;
-  if (!cacheLoadPromise) {
-    cacheLoadPromise = readCorpusFile().then((posts) => {
-      cached = buildIndex(posts);
-      return cached;
-    });
-  }
-  return cacheLoadPromise;
+export async function loadUserCorpus(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<CorpusIndex> {
+  const posts = await fetchUserPosts(supabase, userId);
+  return buildIndex(posts);
 }
 
 const K1 = 1.2;
 const B = 0.75;
 
-export async function searchCorpus(
+export function searchIndex(
+  index: CorpusIndex,
   query: string,
-  k = 5
-): Promise<ScoredPost[]> {
-  const index = await loadCorpus();
+  k = 5,
+): ScoredPost[] {
   if (index.posts.length === 0) return [];
-
   const queryTerms = tokenize(query);
   if (queryTerms.length === 0) return [];
 
@@ -130,14 +138,48 @@ export async function searchCorpus(
   return ranked.slice(0, k);
 }
 
-export async function corpusSize(): Promise<number> {
-  const index = await loadCorpus();
-  return index.posts.length;
+export async function searchUserCorpus(
+  supabase: SupabaseClient,
+  userId: string,
+  query: string,
+  k = 5,
+): Promise<ScoredPost[]> {
+  const index = await loadUserCorpus(supabase, userId);
+  return searchIndex(index, query, k);
 }
 
-export async function getRecentPosts(n = 10): Promise<CorpusPost[]> {
-  const index = await loadCorpus();
-  return [...index.posts]
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-    .slice(0, n);
+export async function getRecentUserPosts(
+  supabase: SupabaseClient,
+  userId: string,
+  n = 10,
+): Promise<CorpusPost[]> {
+  // The query already orders by created_at desc; just trim.
+  const { data, error } = await supabase
+    .from("posts")
+    .select("id, text, created_at, url, reactions, comments")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(n);
+  if (error) throw new Error(`posts query failed: ${error.message}`);
+  const rows = (data ?? []) as PostRow[];
+  return rows.map((r) => ({
+    id: r.id,
+    text: r.text,
+    createdAt: r.created_at,
+    url: r.url,
+    reactions: r.reactions,
+    comments: r.comments,
+  }));
+}
+
+export async function userCorpusSize(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("posts")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (error) throw new Error(`posts count failed: ${error.message}`);
+  return count ?? 0;
 }

@@ -7,12 +7,13 @@ type NavLink = { label: string; href?: string; active?: boolean };
 export function AppHeader({
   active,
 }: {
-  active?: "generate" | "write" | "voice";
+  active?: "generate" | "write" | "voice" | "settings";
 }) {
   const links: NavLink[] = [
     { label: "Write", href: "/write", active: active === "write" },
     { label: "Generate", href: "/", active: active === "generate" },
     { label: "Voice", href: "/voice", active: active === "voice" },
+    { label: "Settings", href: "/settings", active: active === "settings" },
   ];
 
   return (
