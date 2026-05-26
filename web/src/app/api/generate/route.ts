@@ -163,7 +163,7 @@ export async function POST(request: Request) {
     let parsed: GenerateResult;
     try {
       parsed = extractJson(textBlock.text) as GenerateResult;
-    } catch (e) {
+    } catch {
       return NextResponse.json(
         {
           error: "Could not parse model output as JSON",
