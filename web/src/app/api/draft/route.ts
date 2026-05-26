@@ -14,6 +14,13 @@ import { getRecentUserPosts, searchUserCorpus, ScoredPost } from "@/lib/corpus";
 import { createClient } from "@/lib/supabase/server";
 import { isAllowed } from "@/lib/auth-allowlist";
 import { logDraft } from "@/lib/drafts-log";
+import {
+  deriveChatTitle,
+  isUuid,
+  logChatTurn,
+  upsertChat,
+  type StoredExemplar,
+} from "@/lib/chat-history";
 
 export const runtime = "nodejs";
 
@@ -22,6 +29,8 @@ interface DraftRequest {
   profile: VoiceProfile;
   model?: ModelId;
   mode?: OzzyMode;
+  chatId?: string;
+  userMessageId?: string;
 }
 
 function isValidMode(v: unknown): v is OzzyMode {
@@ -137,6 +146,13 @@ export async function POST(request: Request) {
     : DEFAULT_MODEL;
   const mode: OzzyMode = isValidMode(requestedMode) ? requestedMode : "draft";
 
+  // Persistence is opt-in by the client passing valid uuids. Older clients
+  // omit them and continue to work in-memory only.
+  const persist =
+    isUuid(body.chatId) && isUuid(body.userMessageId)
+      ? { chatId: body.chatId, userMessageId: body.userMessageId }
+      : null;
+
   if (!isValidMessages(messages)) {
     return NextResponse.json(
       {
@@ -197,6 +213,28 @@ export async function POST(request: Request) {
 
   if (analyzeError) {
     return NextResponse.json({ error: analyzeError }, { status: 400 });
+  }
+
+  // Persist the chat row + user turn before the model call so an Anthropic
+  // failure still leaves a coherent transcript. Fire-and-forget — the
+  // user-facing response never waits on these.
+  if (persist) {
+    upsertChat({
+      supabase,
+      id: persist.chatId,
+      userId: user.id,
+      title: deriveChatTitle(latestUser.content),
+      mode,
+    });
+    logChatTurn({
+      supabase,
+      id: persist.userMessageId,
+      chatId: persist.chatId,
+      userId: user.id,
+      role: "user",
+      content: latestUser.content,
+      modeAtTurn: mode,
+    });
   }
 
   // Build the API messages: pass conversation history verbatim, but augment
@@ -263,17 +301,35 @@ export async function POST(request: Request) {
       });
     }
 
+    const trimmedExemplars: StoredExemplar[] = exemplars.map((e) => ({
+      id: e.id,
+      text: e.text,
+      url: e.url ?? null,
+      score: Number(e.score.toFixed(3)),
+    }));
+
+    if (persist) {
+      logChatTurn({
+        supabase,
+        id: crypto.randomUUID(),
+        chatId: persist.chatId,
+        userId: user.id,
+        role: "assistant",
+        content: parsed.reply,
+        modeAtTurn: mode,
+        draft: draftText,
+        hookPattern: parsed.hook_pattern ?? null,
+        notes: parsed.notes ?? null,
+        exemplars: trimmedExemplars.length > 0 ? trimmedExemplars : null,
+      });
+    }
+
     return NextResponse.json({
       reply: parsed.reply,
       draft: draftText,
       hook_pattern: parsed.hook_pattern ?? null,
       notes: parsed.notes ?? null,
-      exemplars: exemplars.map((e) => ({
-        id: e.id,
-        text: e.text,
-        url: e.url ?? null,
-        score: Number(e.score.toFixed(3)),
-      })),
+      exemplars: trimmedExemplars,
       usage: {
         input_tokens: response.usage.input_tokens,
         output_tokens: response.usage.output_tokens,

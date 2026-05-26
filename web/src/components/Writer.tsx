@@ -16,8 +16,20 @@ import { loadModel, ModelId, saveModel } from "@/lib/model-settings";
 import { ModelSelector } from "@/components/ModelSelector";
 import { OzzyAvatar } from "@/components/OzzyAvatar";
 import { PENDING_SOURCE_KEY } from "@/lib/handoff";
+import type { OzzyMode, StoredMessage } from "@/lib/chat-history";
 
-type OzzyMode = "draft" | "brainstorm" | "analyze";
+export interface LoadedChat {
+  chatId: string;
+  messages: StoredMessage[];
+  mode: OzzyMode;
+}
+
+interface WriterProps {
+  chatId: string;
+  loadedChat: LoadedChat | null;
+  onAfterTurn: () => void;
+  onNewChat: () => void;
+}
 
 interface Exemplar {
   id: string;
@@ -48,7 +60,12 @@ const INTRO_BY_MODE: Record<OzzyMode, string> = {
 
 const ANALYZE_TRIGGER_LABEL = "Analyze my recent posts.";
 
-export function Writer() {
+export function Writer({
+  chatId,
+  loadedChat,
+  onAfterTurn,
+  onNewChat,
+}: WriterProps) {
   const router = useRouter();
   const [profile, setProfile] = useState<VoiceProfile | null>(null);
   const [model, setModel] = useState<ModelId>("claude-sonnet-4-6");
@@ -87,6 +104,29 @@ export function Writer() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, loading]);
+
+  // Rehydrate from sidebar selection.
+  useEffect(() => {
+    if (!loadedChat) return;
+    const rehydrated: ChatMessage[] = loadedChat.messages.map((m) =>
+      m.role === "assistant"
+        ? {
+            role: "assistant",
+            content: m.content,
+            draft: m.draft,
+            hook_pattern: m.hook_pattern,
+            notes: m.notes,
+            exemplars: m.exemplars ?? [],
+          }
+        : { role: "user", content: m.content },
+    );
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing UI state from a parent-owned loaded chat payload
+    setMessages(rehydrated);
+    setMode(loadedChat.mode);
+    setInput("");
+    setError(null);
+    setLoading(false);
+  }, [loadedChat]);
 
   const handleModelChange = (next: ModelId) => {
     setModel(next);
@@ -138,6 +178,8 @@ export function Writer() {
           profile,
           model,
           mode: sendMode,
+          chatId,
+          userMessageId: crypto.randomUUID(),
         }),
       });
       const data = await res.json();
@@ -156,6 +198,7 @@ export function Writer() {
           exemplars: data.exemplars ?? [],
         },
       ]);
+      onAfterTurn();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
     } finally {
@@ -190,6 +233,7 @@ export function Writer() {
     setError(null);
     setLoading(false);
     setMode("draft");
+    onNewChat();
   };
 
   const sendDraftToMultiplier = (draft: string) => {
