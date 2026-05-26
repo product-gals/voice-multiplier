@@ -112,6 +112,10 @@ Ingest happens via the UI at `/settings` ([CorpusManager.tsx](web/src/components
 
 **Originator → Multiplier handoff**: the "Send to Multiplier" button on a specific draft stores it in `sessionStorage` under [`PENDING_SOURCE_KEY`](web/src/lib/handoff.ts) and navigates to `/`. The Generator picks it up on mount and clears the key. sessionStorage (not localStorage) so the handoff doesn't persist past the tab.
 
+**Chat history persistence** (migration `0002_chat_history.sql`): `chats` and `chat_messages` tables, RLS-scoped to `auth.uid()`. [`ChatSidebar`](web/src/components/ChatSidebar.tsx) on `/write` (md+ breakpoints only) lists past chats; [`WriteWorkspace`](web/src/components/WriteWorkspace.tsx) owns `chatId` state and wires the sidebar to [Writer](web/src/components/Writer.tsx). Routes: `GET/POST /api/chats`, `GET/DELETE /api/chats/[id]`. Chat title is derived from the first ~60 chars of the first user message. `mode` is snapshotted per message (`mode_at_turn`) so rehydration restores the right mode chip even if the session mode changed mid-chat. Persistence is opt-in by the client: `/api/draft` only writes turns when the request body includes a valid `chatId` uuid, so older clients keep working in-memory.
+
+**Drafts logging** ([drafts-log.ts](web/src/lib/drafts-log.ts)): every generation is fire-and-forget inserted into `public.drafts` (table exists from `0001_initial_schema.sql`, RLS scoped to `user_id = auth.uid()`). `/api/generate` writes `kind='multiplier'` with `source_post`, `target`, `fit_score`, `model`, and `feedback` (regenerations populate `feedback` instead of using a parent_id link). `/api/draft` writes `kind='originator'` with `hook_pattern` and `model`, but **only when a draft was actually produced** — brainstorm/analyze turns that return no draft are skipped. Insert errors log to the server console (`[drafts-log] insert failed:`) and never block the response. Nothing reads these rows yet; they're substrate for the future learning loop.
+
 **Worktree gotcha**: `.env.local` isn't git-tracked. If you create a worktree, copy `web/.env.local` from the main repo or the API will return 503.
 
 ## Conventions

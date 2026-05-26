@@ -22,3 +22,4 @@ node_modules/
 # Originator corpus — built from the user's LinkedIn data export, contains
 # personal post content, never commit
 web/data/posts.json
+.vercel

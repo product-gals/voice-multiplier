@@ -7,19 +7,17 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(
-      `Missing required env var: ${name}. Add it to web/.env.local (see Supabase project → Settings → API).`,
-    );
-  }
-  return value;
-}
+// NEXT_PUBLIC_* vars must be accessed with literal property names so Next.js
+// can statically inline them into the client bundle at build time.
+// Dynamic access (process.env[name]) is NOT inlined and breaks in the browser.
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export function createClient() {
-  return createBrowserClient(
-    requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
-  );
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error(
+      "Missing Supabase env vars. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in web/.env.local (see Supabase project → Settings → API).",
+    );
+  }
+  return createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
