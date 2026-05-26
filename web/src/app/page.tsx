@@ -4,7 +4,7 @@ import { Generator } from "@/components/Generator";
 export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black text-zinc-900 dark:text-zinc-50">
-      <AppHeader active="generate" />
+      <AppHeader active="multiply" />
 
       <main className="mx-auto max-w-5xl px-6 py-10">
         <Generator />

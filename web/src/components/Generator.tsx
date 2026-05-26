@@ -186,7 +186,7 @@ export function Generator() {
             disabled={!canGenerate}
             className="rounded-full bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 px-4 py-1.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           >
-            {isGenerating ? "Generating..." : "Generate →"}
+            {isGenerating ? "Multiplying..." : "Multiply →"}
           </button>
         </div>
       </section>

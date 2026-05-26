@@ -529,7 +529,7 @@ function DraftBlock({
           onClick={() => onSendDraft(draft)}
           className="ml-auto text-zinc-700 dark:text-zinc-200 font-medium hover:text-zinc-900 dark:hover:text-zinc-50"
         >
-          Send to Multiplier →
+          Send to Multiply →
         </button>
       </div>
       {exemplarsOpen && exemplars.length > 0 && (
