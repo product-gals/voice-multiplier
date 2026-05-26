@@ -9,7 +9,7 @@ import {
   TARGET_LABELS,
   VoiceProfile,
 } from "@/lib/voice-profile";
-import { loadModel, ModelId, saveModel } from "@/lib/model-settings";
+import { DEFAULT_MODEL, fetchModel, ModelId, putModel } from "@/lib/model-settings";
 import { ModelSelector } from "@/components/ModelSelector";
 import { PENDING_SOURCE_KEY } from "@/lib/handoff";
 
@@ -39,7 +39,7 @@ export function Generator() {
   const router = useRouter();
   const [source, setSource] = useState("");
   const [profile, setProfile] = useState<VoiceProfile | null>(null);
-  const [model, setModel] = useState<ModelId>("claude-sonnet-4-6");
+  const [model, setModel] = useState<ModelId>(DEFAULT_MODEL);
   const [states, setStates] = useState<Record<Target, CardState>>(INITIAL_STATES);
 
   useEffect(() => {
@@ -58,7 +58,9 @@ export function Generator() {
         return;
       }
     })();
-    setModel(loadModel());
+    fetchModel().then((m) => {
+      if (!cancelled) setModel(m);
+    });
     try {
       const pending = window.sessionStorage.getItem(PENDING_SOURCE_KEY);
       if (pending) {
@@ -75,7 +77,7 @@ export function Generator() {
 
   const handleModelChange = (next: ModelId) => {
     setModel(next);
-    saveModel(next);
+    void putModel(next);
   };
 
   const enabledTargets: Target[] =

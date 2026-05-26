@@ -99,7 +99,7 @@ export function buildProfileFromOnboarding(
 export function saveObservations(observations: string[]): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(OBSERVATIONS_KEY, JSON.stringify(observations));
+    window.sessionStorage.setItem(OBSERVATIONS_KEY, JSON.stringify(observations));
   } catch {
     // ignore
   }
@@ -108,9 +108,9 @@ export function saveObservations(observations: string[]): void {
 export function loadAndClearObservations(): string[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(OBSERVATIONS_KEY);
+    const raw = window.sessionStorage.getItem(OBSERVATIONS_KEY);
     if (!raw) return [];
-    window.localStorage.removeItem(OBSERVATIONS_KEY);
+    window.sessionStorage.removeItem(OBSERVATIONS_KEY);
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       return parsed.filter((s) => typeof s === "string");

@@ -12,7 +12,7 @@ import {
   fetchProfile,
   VoiceProfile,
 } from "@/lib/voice-profile";
-import { loadModel, ModelId, saveModel } from "@/lib/model-settings";
+import { DEFAULT_MODEL, fetchModel, ModelId, putModel } from "@/lib/model-settings";
 import { ModelSelector } from "@/components/ModelSelector";
 import { OzzyAvatar } from "@/components/OzzyAvatar";
 import { PENDING_SOURCE_KEY } from "@/lib/handoff";
@@ -68,7 +68,7 @@ export function Writer({
 }: WriterProps) {
   const router = useRouter();
   const [profile, setProfile] = useState<VoiceProfile | null>(null);
-  const [model, setModel] = useState<ModelId>("claude-sonnet-4-6");
+  const [model, setModel] = useState<ModelId>(DEFAULT_MODEL);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -92,8 +92,9 @@ export function Writer({
         if (!cancelled) router.replace("/onboarding");
       }
     })();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing localStorage state on mount
-    setModel(loadModel());
+    fetchModel().then((m) => {
+      if (!cancelled) setModel(m);
+    });
     return () => {
       cancelled = true;
     };
@@ -130,7 +131,7 @@ export function Writer({
 
   const handleModelChange = (next: ModelId) => {
     setModel(next);
-    saveModel(next);
+    void putModel(next);
   };
 
   const writerName = useMemo(
