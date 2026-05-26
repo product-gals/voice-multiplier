@@ -13,6 +13,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { getRecentUserPosts, searchUserCorpus, ScoredPost } from "@/lib/corpus";
 import { createClient } from "@/lib/supabase/server";
 import { isAllowed } from "@/lib/auth-allowlist";
+import { logDraft } from "@/lib/drafts-log";
 
 export const runtime = "nodejs";
 
@@ -246,12 +247,25 @@ export async function POST(request: Request) {
       );
     }
 
+    const draftText =
+      typeof parsed.draft === "string" && parsed.draft.length > 0
+        ? parsed.draft
+        : null;
+
+    if (draftText) {
+      logDraft({
+        supabase,
+        userId: user.id,
+        kind: "originator",
+        output: draftText,
+        hook_pattern: parsed.hook_pattern ?? null,
+        model,
+      });
+    }
+
     return NextResponse.json({
       reply: parsed.reply,
-      draft:
-        typeof parsed.draft === "string" && parsed.draft.length > 0
-          ? parsed.draft
-          : null,
+      draft: draftText,
       hook_pattern: parsed.hook_pattern ?? null,
       notes: parsed.notes ?? null,
       exemplars: exemplars.map((e) => ({
