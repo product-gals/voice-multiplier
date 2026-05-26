@@ -60,11 +60,17 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   tiktok: "TikTok",
 };
 
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
 export function VoiceProfileEditor() {
   const router = useRouter();
   const [profile, setProfile] = useState<VoiceProfile | null>(null);
   const [observations, setObservations] = useState<string[]>([]);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  // Skip the initial save fired by hydrating profile from the server.
+  const isFirstLoadRef = useRef(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,8 +97,19 @@ export function VoiceProfileEditor() {
   // round-trips through /api/profile so other devices/tabs see it after refresh.
   useEffect(() => {
     if (!profile) return;
-    const t = setTimeout(() => {
-      void putProfile(profile);
+    if (isFirstLoadRef.current) {
+      isFirstLoadRef.current = false;
+      return;
+    }
+    setSaveStatus("saving");
+    const t = setTimeout(async () => {
+      try {
+        await putProfile(profile);
+        setSaveStatus("saved");
+        setLastSavedAt(new Date());
+      } catch {
+        setSaveStatus("error");
+      }
     }, 500);
     return () => clearTimeout(t);
   }, [profile]);
@@ -240,9 +257,12 @@ export function VoiceProfileEditor() {
           <h1 className="text-2xl font-semibold tracking-tight">
             Voice profile
           </h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-            Edit anything below. Changes save automatically to your account.
-          </p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              Edit anything below. Changes save automatically.
+            </p>
+            <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
+          </div>
         </div>
         <div className="flex items-center gap-4 text-xs">
           <Link
@@ -262,12 +282,6 @@ export function VoiceProfileEditor() {
             className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 underline underline-offset-4"
           >
             Import
-          </button>
-          <button
-            onClick={handleReset}
-            className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 underline underline-offset-4"
-          >
-            Reset to sample
           </button>
           <input
             ref={importInputRef}
@@ -681,7 +695,7 @@ export function VoiceProfileEditor() {
       {/* TARGET PLATFORMS */}
       <SectionShell
         title="Target platforms"
-        subtitle="Which platforms to generate for. Disabled platforms won't appear on the Generate page."
+        subtitle="Which platforms to generate for. Disabled platforms won't appear on the Multiply page."
       >
         <div className="flex flex-wrap gap-2">
           {TARGETS.map((t) => {
@@ -699,7 +713,7 @@ export function VoiceProfileEditor() {
         </div>
         {profile.settings.enabled_targets.length === 0 && (
           <p className="text-xs text-amber-600 dark:text-amber-400 italic">
-            No platforms enabled — Generate will fall back to all 5.
+            No platforms enabled — Multiply will fall back to all 5.
           </p>
         )}
       </SectionShell>
@@ -713,6 +727,25 @@ export function VoiceProfileEditor() {
           rows={3}
         />
       </SectionShell>
+
+      {/* RESET */}
+      <section className="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/40 dark:bg-amber-950/20 p-4 flex items-center justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+            Reset to sample
+          </h3>
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+            Replaces your current profile with the starter sample. You can edit
+            from there.
+          </p>
+        </div>
+        <button
+          onClick={handleReset}
+          className="text-xs font-medium px-3 py-1.5 rounded-md border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/40 transition-colors"
+        >
+          Reset
+        </button>
+      </section>
 
       {/* DANGER ZONE */}
       <section className="rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50/30 dark:bg-rose-950/20 p-4 flex items-center justify-between gap-4">
@@ -736,6 +769,38 @@ export function VoiceProfileEditor() {
         Updated {new Date(profile.updated_at).toLocaleString()}
       </p>
     </div>
+  );
+}
+
+function SaveIndicator({
+  status,
+  lastSavedAt,
+}: {
+  status: SaveStatus;
+  lastSavedAt: Date | null;
+}) {
+  if (status === "idle") return null;
+  if (status === "saving") {
+    return (
+      <span className="text-[11px] text-zinc-400 inline-flex items-center gap-1.5">
+        <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 animate-pulse" />
+        Saving…
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="text-[11px] text-rose-600 dark:text-rose-400 inline-flex items-center gap-1.5">
+        <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+        Save failed — try again
+      </span>
+    );
+  }
+  return (
+    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1.5">
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      Saved{lastSavedAt ? ` · ${lastSavedAt.toLocaleTimeString()}` : ""}
+    </span>
   );
 }
 
