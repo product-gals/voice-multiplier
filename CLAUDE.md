@@ -96,25 +96,21 @@ The originator is a chat-based writing partner named **Ozzy**, modeled loosely o
 **Three modes** ([draft-prompts.ts](web/src/lib/draft-prompts.ts) `OzzyMode`):
 - `draft` (default) — strong bias toward drafting. Per-turn BM25 retrieval. Empty-state CTA: "Write a new post".
 - `brainstorm` — Ozzy does NOT draft. Asks sharp questions, offers angles. Only drafts when user explicitly asks. No retrieval. CTA: "Talk through an idea".
-- `analyze` — first turn auto-triggers from CTA "Analyze recent posts". Backend pulls the 10 most recent posts via `getRecentPosts` ([corpus.ts](web/src/lib/corpus.ts)), assembles a trigger prompt, and Ozzy returns an honest editorial audit (what's working, what's becoming a crutch, angles not yet tried). Long-form reply allowed in this mode. Returns 400 with a friendly "ingest first" message if the corpus is empty.
+- `analyze` — first turn auto-triggers from CTA "Analyze recent posts". Backend pulls the 10 most recent posts via `getRecentUserPosts` ([corpus.ts](web/src/lib/corpus.ts)), assembles a trigger prompt, and Ozzy returns an honest editorial audit (what's working, what's becoming a crutch, angles not yet tried). Long-form reply allowed in this mode. Returns 400 with a friendly "upload from Settings" message if the corpus is empty.
 
 The mode is set client-side from the empty-state CTAs ([Writer.tsx](web/src/components/Writer.tsx) `startMode`) and passed in the request body. It's persistent for the chat session; New Chat resets to `draft`.
 
-**Per-turn retrieval**: the route runs `searchCorpus(latestUserMessage, 5)` every turn and appends exemplars to the latest user message only (older turns keep their original text). This handles mid-chat topic pivots naturally without changing the system prompt (which stays cacheable).
+**Per-turn retrieval**: the route runs `searchUserCorpus(supabase, user.id, latestUserMessage, 5)` every turn and appends exemplars to the latest user message only (older turns keep their original text). This handles mid-chat topic pivots naturally without changing the system prompt (which stays cacheable).
 
 **Conversation history shape sent to the API**: user turns are sent verbatim. Assistant turns are reformatted from the UI's structured state into natural text — the reply, optionally followed by `[draft I produced this turn]` + the draft body. The model reads its own prior drafts as context for revision requests like "shorter" or "lead with the number." Don't send prior assistant turns as JSON — it confuses the model now that tool-use is the output channel.
 
-**Corpus** ([web/src/lib/corpus.ts](web/src/lib/corpus.ts)): inline BM25 over all posts, no embeddings, no vector DB. `loadCorpus()` reads `data/posts.json` once and caches at module scope; missing file → empty corpus (Ozzy still drafts, just without exemplars). Built once from LinkedIn's free data export:
-```
-cd web && npm run ingest -- /path/to/Shares.csv
-```
-Ingest script ([web/scripts/ingest-linkedin-export.mjs](web/scripts/ingest-linkedin-export.mjs)) parses `Shares.csv` (tolerates column-name variants), skips empties and reposts, normalizes to `{ id, text, createdAt, url?, reactions?, comments? }`, sorts newest-first.
+**Corpus** ([web/src/lib/corpus.ts](web/src/lib/corpus.ts)): per-user, lives in `public.posts` (RLS-scoped). Inline BM25 over the user's posts — no embeddings, no vector DB. `loadUserCorpus(supabase, userId)` reads rows from the table and rebuilds the index **per request** (no module-scope cache — different users can't share state). For personal-scale corpora (hundreds to low thousands of posts), this is cheap. If it ever shows up in a profile, add an in-memory LRU keyed by user_id.
+
+Ingest happens via the UI at `/settings` ([CorpusManager.tsx](web/src/components/CorpusManager.tsx)) — upload `Shares.csv` from your LinkedIn data export. The route is `POST /api/posts/ingest` ([route](web/src/app/api/posts/ingest/route.ts)), which calls the shared parser at [linkedin-shares.ts](web/src/lib/linkedin-shares.ts) and bulk-upserts into `public.posts`. Default mode is `replace` (wipe your existing corpus, then insert) so re-uploading a fresh export doesn't leave deleted posts behind.
 
 **Voice rendering**: both `/api/generate` and `/api/draft` share `renderVoiceProfile` from [web/src/lib/voice-renderer.ts](web/src/lib/voice-renderer.ts). Keep in sync when adding voice profile fields.
 
 **Originator → Multiplier handoff**: the "Send to Multiplier" button on a specific draft stores it in `sessionStorage` under [`PENDING_SOURCE_KEY`](web/src/lib/handoff.ts) and navigates to `/`. The Generator picks it up on mount and clears the key. sessionStorage (not localStorage) so the handoff doesn't persist past the tab.
-
-**Corpus file is gitignored** (`web/data/posts.json`) — contains personal post content.
 
 **Worktree gotcha**: `.env.local` isn't git-tracked. If you create a worktree, copy `web/.env.local` from the main repo or the API will return 503.
 
