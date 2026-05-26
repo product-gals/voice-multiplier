@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { saveObservations } from "@/lib/onboarding";
 
 interface RecentPost {
   id: string;
@@ -40,6 +42,8 @@ export function CorpusManager() {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [lastIngest, setLastIngest] = useState<IngestResult | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestionCount, setSuggestionCount] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -71,6 +75,7 @@ export function CorpusManager() {
     setUploading(true);
     setError(null);
     setLastIngest(null);
+    setSuggestionCount(null);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -83,6 +88,27 @@ export function CorpusManager() {
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
       setLastIngest(body as IngestResult);
       await refresh();
+      // Best-effort: ask the extractor for fresh observations from the new
+      // corpus. Saved to sessionStorage so the voice page picks them up.
+      // Never block the success state on this.
+      setSuggesting(true);
+      try {
+        const sres = await fetch("/api/voice/suggest-from-corpus", {
+          method: "POST",
+          credentials: "include",
+        });
+        if (sres.ok) {
+          const sbody = (await sres.json()) as { observations: string[] };
+          if (sbody.observations.length > 0) {
+            saveObservations(sbody.observations);
+            setSuggestionCount(sbody.observations.length);
+          }
+        }
+      } catch {
+        // suggestions are nice-to-have; swallow
+      } finally {
+        setSuggesting(false);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -119,8 +145,10 @@ export function CorpusManager() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Corpus</h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Your LinkedIn post history. Ozzy retrieves from this in draft mode and
-          audits it in analyze mode. Upload <code>Shares.csv</code> from your{" "}
+          Your LinkedIn post history. Ozzy retrieves from this in draft mode,
+          audits it in analyze mode, and the voice profile will get fresh
+          suggestions from it after each upload. Upload <code>Shares.csv</code>{" "}
+          from your{" "}
           <a
             href="https://www.linkedin.com/help/linkedin/answer/a1339364"
             target="_blank"
@@ -199,6 +227,28 @@ export function CorpusManager() {
                 Ingested {lastIngest.inserted} posts. Skipped{" "}
                 {lastIngest.skippedNoText} with no text and{" "}
                 {lastIngest.skippedTooShort} under 20 chars.
+              </div>
+            )}
+
+            {suggesting && (
+              <div className="rounded-md border border-sky-200 dark:border-sky-900/60 bg-sky-50 dark:bg-sky-950/40 p-3 text-sm text-sky-800 dark:text-sky-200 inline-flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse" />
+                Reading your posts for voice suggestions…
+              </div>
+            )}
+
+            {suggestionCount !== null && suggestionCount > 0 && !suggesting && (
+              <div className="rounded-md border border-sky-200 dark:border-sky-900/60 bg-sky-50 dark:bg-sky-950/40 p-3 text-sm text-sky-800 dark:text-sky-200 flex items-center justify-between gap-3">
+                <span>
+                  We took {suggestionCount} note{suggestionCount === 1 ? "" : "s"}{" "}
+                  on your style.
+                </span>
+                <Link
+                  href="/voice"
+                  className="font-medium underline underline-offset-2 hover:text-sky-900 dark:hover:text-sky-100"
+                >
+                  Review on Voice page →
+                </Link>
               </div>
             )}
 
