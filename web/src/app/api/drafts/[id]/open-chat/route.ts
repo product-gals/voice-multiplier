@@ -54,9 +54,14 @@ export async function POST(_request: Request, { params }: RouteContext) {
     return NextResponse.json({ chatId: existing.chat_id, seeded: false });
   }
 
-  // 2) Fallback: seed a fresh chat with one synthetic assistant turn.
+  // 2) Fallback: seed a fresh chat. Two turns — a synthetic user turn so the
+  // Anthropic API contract (messages must start with role=user) holds when the
+  // user sends their first real revision, followed by an assistant turn that
+  // carries the saved draft so the UI shows the draft block to revise from.
   const chatId = crypto.randomUUID();
-  const messageId = crypto.randomUUID();
+  const userMessageId = crypto.randomUUID();
+  const assistantMessageId = crypto.randomUUID();
+  const userTurn = "Let's keep working on this saved draft.";
   const reply = "Here's the draft you saved — what do you want to change?";
   const title = deriveChatTitle(draft.output);
 
@@ -70,19 +75,34 @@ export async function POST(_request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: chatErr.message }, { status: 500 });
   }
 
-  const { error: msgErr } = await supabase.from("chat_messages").insert({
-    id: messageId,
-    chat_id: chatId,
-    user_id: user.id,
-    role: "assistant",
-    content: reply,
-    mode_at_turn: "draft",
-    draft: draft.output,
-    hook_pattern: null,
-    notes: null,
-    exemplars: null,
-    draft_id: id,
-  });
+  const { error: msgErr } = await supabase.from("chat_messages").insert([
+    {
+      id: userMessageId,
+      chat_id: chatId,
+      user_id: user.id,
+      role: "user",
+      content: userTurn,
+      mode_at_turn: "draft",
+      draft: null,
+      hook_pattern: null,
+      notes: null,
+      exemplars: null,
+      draft_id: null,
+    },
+    {
+      id: assistantMessageId,
+      chat_id: chatId,
+      user_id: user.id,
+      role: "assistant",
+      content: reply,
+      mode_at_turn: "draft",
+      draft: draft.output,
+      hook_pattern: null,
+      notes: null,
+      exemplars: null,
+      draft_id: id,
+    },
+  ]);
   if (msgErr) {
     // Best-effort cleanup so we don't leave an empty chat hanging around.
     await supabase.from("chats").delete().eq("id", chatId);
