@@ -311,6 +311,19 @@ export async function POST(request: Request) {
   const client = new Anthropic();
   const systemPrompt = buildOzzySystem(profile, mode);
 
+  // TEMP DEBUG — confirm the voice constraints actually reach the model.
+  // Logs the saved punctuation enums and the PUNCTUATION RULES block from the
+  // rendered system prompt. Gated on DEBUG_OZZY_PROMPT=1.
+  if (process.env.DEBUG_OZZY_PROMPT === "1") {
+    const punctIdx = systemPrompt.indexOf("PUNCTUATION RULES");
+    const punctSlice =
+      punctIdx >= 0
+        ? systemPrompt.slice(punctIdx, punctIdx + 400)
+        : "(PUNCTUATION RULES block not found in system prompt)";
+    console.log("[ozzy-debug] profile.punctuation =", profile.punctuation);
+    console.log("[ozzy-debug] rendered punctuation block:\n" + punctSlice);
+  }
+
   try {
     const response = await client.messages.create({
       model,
@@ -350,6 +363,27 @@ export async function POST(request: Request) {
       typeof parsed.draft === "string" && parsed.draft.length > 0
         ? parsed.draft
         : null;
+
+    // TEMP DEBUG — flag forbidden chars in the returned draft so we can
+    // correlate "what the prompt said" with "what the model returned".
+    if (process.env.DEBUG_OZZY_PROMPT === "1" && draftText) {
+      const violations: string[] = [];
+      if (profile.punctuation.em_dash === "forbidden" && /[—–]|--/.test(draftText)) {
+        violations.push("em/en dash or double-hyphen");
+      }
+      if (profile.punctuation.exclamation === "forbidden" && /!/.test(draftText)) {
+        violations.push("exclamation");
+      }
+      if (profile.punctuation.ellipsis === "forbidden" && /\.\.\.|…/.test(draftText)) {
+        violations.push("ellipsis");
+      }
+      console.log("[ozzy-debug] draft length =", draftText.length);
+      console.log(
+        "[ozzy-debug] forbidden-char violations =",
+        violations.length > 0 ? violations.join(", ") : "(none)",
+      );
+      console.log("[ozzy-debug] draft preview:\n" + draftText.slice(0, 500));
+    }
 
     // Await the insert so we can return draft_id to the client (used by the
     // star/save button). Failure returns null and we proceed — saving is
