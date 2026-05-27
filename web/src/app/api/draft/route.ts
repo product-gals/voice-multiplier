@@ -13,7 +13,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { getRecentUserPosts, searchUserCorpus, ScoredPost } from "@/lib/corpus";
 import { createClient } from "@/lib/supabase/server";
 import { isAllowed } from "@/lib/auth-allowlist";
-import { logDraft } from "@/lib/drafts-log";
+import { logDraftReturningId } from "@/lib/drafts-log";
 import {
   deriveChatTitle,
   isUuid,
@@ -290,8 +290,12 @@ export async function POST(request: Request) {
         ? parsed.draft
         : null;
 
+    // Await the insert so we can return draft_id to the client (used by the
+    // star/save button). Failure returns null and we proceed — saving is
+    // non-critical and shouldn't break the chat reply.
+    let draftId: string | null = null;
     if (draftText) {
-      logDraft({
+      draftId = await logDraftReturningId({
         supabase,
         userId: user.id,
         kind: "originator",
@@ -321,12 +325,14 @@ export async function POST(request: Request) {
         hookPattern: parsed.hook_pattern ?? null,
         notes: parsed.notes ?? null,
         exemplars: trimmedExemplars.length > 0 ? trimmedExemplars : null,
+        draftId,
       });
     }
 
     return NextResponse.json({
       reply: parsed.reply,
       draft: draftText,
+      draft_id: draftId,
       hook_pattern: parsed.hook_pattern ?? null,
       notes: parsed.notes ?? null,
       exemplars: trimmedExemplars,

@@ -13,11 +13,16 @@ interface ChatPayload {
 export function WriteWorkspace() {
   const [chatId, setChatId] = useState<string>(() => crypto.randomUUID());
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
+  const [savedDraftsRefreshKey, setSavedDraftsRefreshKey] = useState(0);
   const [loadedChat, setLoadedChat] = useState<LoadedChat | null>(null);
 
   const handleNew = useCallback(() => {
     setChatId(crypto.randomUUID());
     setLoadedChat(null);
+  }, []);
+
+  const handleSavedDraftsChanged = useCallback(() => {
+    setSavedDraftsRefreshKey((k) => k + 1);
   }, []);
 
   const handleSelect = useCallback(async (id: string) => {
@@ -55,6 +60,7 @@ export function WriteWorkspace() {
         <ChatSidebar
           currentChatId={chatId}
           refreshKey={sidebarRefreshKey}
+          savedDraftsRefreshKey={savedDraftsRefreshKey}
           onSelect={handleSelect}
           onNew={handleNew}
           onDeleted={handleDeleted}
@@ -65,7 +71,7 @@ export function WriteWorkspace() {
           chatId={chatId}
           loadedChat={loadedChat}
           onAfterTurn={handleAfterTurn}
-          onNewChat={handleNew}
+          onSavedDraftsChanged={handleSavedDraftsChanged}
         />
       </div>
     </div>

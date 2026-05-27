@@ -32,6 +32,11 @@ export interface StoredMessage {
   hook_pattern: string | null;
   notes: string | null;
   exemplars: StoredExemplar[] | null;
+  // Back-reference to the public.drafts row this turn produced (assistant
+  // turns only, and only when a draft was generated). Lets the UI show
+  // saved/unsaved state on rehydrated chats.
+  draft_id: string | null;
+  saved: boolean;
   created_at: string;
 }
 
@@ -89,6 +94,7 @@ interface LogChatTurnArgs {
   hookPattern?: string | null;
   notes?: string | null;
   exemplars?: StoredExemplar[] | null;
+  draftId?: string | null;
 }
 
 export function logChatTurn(args: LogChatTurnArgs): void {
@@ -104,6 +110,7 @@ export function logChatTurn(args: LogChatTurnArgs): void {
     hookPattern = null,
     notes = null,
     exemplars = null,
+    draftId = null,
   } = args;
   void supabase
     .from("chat_messages")
@@ -118,6 +125,7 @@ export function logChatTurn(args: LogChatTurnArgs): void {
       hook_pattern: hookPattern,
       notes,
       exemplars,
+      draft_id: draftId,
     })
     .then(({ error }) => {
       if (error) console.error("[chat-history] message insert failed:", error.message);

@@ -28,7 +28,7 @@ interface WriterProps {
   chatId: string;
   loadedChat: LoadedChat | null;
   onAfterTurn: () => void;
-  onNewChat: () => void;
+  onSavedDraftsChanged: () => void;
 }
 
 interface Exemplar {
@@ -40,6 +40,8 @@ interface Exemplar {
 
 interface OzzyMeta {
   draft: string | null;
+  draft_id: string | null;
+  saved: boolean;
   hook_pattern: string | null;
   notes: string | null;
   exemplars: Exemplar[];
@@ -64,7 +66,7 @@ export function Writer({
   chatId,
   loadedChat,
   onAfterTurn,
-  onNewChat,
+  onSavedDraftsChanged,
 }: WriterProps) {
   const router = useRouter();
   const [profile, setProfile] = useState<VoiceProfile | null>(null);
@@ -106,28 +108,46 @@ export function Writer({
     }
   }, [messages, loading]);
 
-  // Rehydrate from sidebar selection.
+  // Auto-grow the input textarea with content (capped by CSS max-h-40).
   useEffect(() => {
-    if (!loadedChat) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
+
+  // Sync local chat state to the parent-owned chat selection.
+  // loadedChat = null means "fresh chat" (sidebar's + New chat); non-null means rehydrate from history.
+  useEffect(() => {
+    if (!loadedChat) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting on chat change
+      setMessages([]);
+      setMode("draft");
+      setInput("");
+      setError(null);
+      setLoading(false);
+      return;
+    }
     const rehydrated: ChatMessage[] = loadedChat.messages.map((m) =>
       m.role === "assistant"
         ? {
             role: "assistant",
             content: m.content,
             draft: m.draft,
+            draft_id: m.draft_id,
+            saved: m.saved,
             hook_pattern: m.hook_pattern,
             notes: m.notes,
             exemplars: m.exemplars ?? [],
           }
         : { role: "user", content: m.content },
     );
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing UI state from a parent-owned loaded chat payload
     setMessages(rehydrated);
     setMode(loadedChat.mode);
     setInput("");
     setError(null);
     setLoading(false);
-  }, [loadedChat]);
+  }, [loadedChat, chatId]);
 
   const handleModelChange = (next: ModelId) => {
     setModel(next);
@@ -194,6 +214,8 @@ export function Writer({
           role: "assistant",
           content: data.reply,
           draft: data.draft ?? null,
+          draft_id: data.draft_id ?? null,
+          saved: false,
           hook_pattern: data.hook_pattern ?? null,
           notes: data.notes ?? null,
           exemplars: data.exemplars ?? [],
@@ -228,13 +250,33 @@ export function Writer({
     setError(null);
   };
 
-  const newChat = () => {
-    setMessages([]);
-    setInput("");
-    setError(null);
-    setLoading(false);
-    setMode("draft");
-    onNewChat();
+  // Toggle starred state on a draft. Optimistic — flip locally first, revert
+  // on server error. Notifies parent so the sidebar's saved-drafts list refreshes.
+  const toggleSavedDraft = async (draftId: string, nextSaved: boolean) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.role === "assistant" && m.draft_id === draftId
+          ? { ...m, saved: nextSaved }
+          : m,
+      ),
+    );
+    try {
+      const res = await fetch(`/api/drafts/${draftId}/save`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saved: nextSaved }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      onSavedDraftsChanged();
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.role === "assistant" && m.draft_id === draftId
+            ? { ...m, saved: !nextSaved }
+            : m,
+        ),
+      );
+    }
   };
 
   const sendDraftToMultiplier = (draft: string) => {
@@ -279,13 +321,6 @@ export function Writer({
         </div>
         <div className="flex items-center gap-3 text-[11px] text-zinc-400 shrink-0">
           <ModelSelector value={model} onChange={handleModelChange} />
-          <button
-            onClick={newChat}
-            disabled={messages.length === 0 && !error}
-            className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:text-zinc-300 dark:disabled:text-zinc-700 disabled:cursor-not-allowed"
-          >
-            New chat
-          </button>
         </div>
       </header>
 
@@ -296,10 +331,13 @@ export function Writer({
         <AssistantBubble
           content={INTRO_BY_MODE[mode]}
           draft={null}
+          draftId={null}
+          saved={false}
           hookPattern={null}
           notes={null}
           exemplars={[]}
           onSendDraft={sendDraftToMultiplier}
+          onToggleSave={toggleSavedDraft}
         />
         {messages.length === 0 && !loading && (
           <div className="pl-9 flex flex-wrap gap-2 pt-1">
@@ -331,10 +369,13 @@ export function Writer({
               key={i}
               content={m.content}
               draft={m.draft}
+              draftId={m.draft_id}
+              saved={m.saved}
               hookPattern={m.hook_pattern}
               notes={m.notes}
               exemplars={m.exemplars}
               onSendDraft={sendDraftToMultiplier}
+              onToggleSave={toggleSavedDraft}
             />
           )
         )}
@@ -366,7 +407,7 @@ export function Writer({
       </div>
 
       <div className="border-t border-zinc-200 dark:border-zinc-800 pt-3">
-        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex items-end gap-2 px-3 py-2">
+        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex items-end gap-2 px-3 py-2 focus-within:border-zinc-400 dark:focus-within:border-zinc-600 transition-colors">
           <textarea
             ref={inputRef}
             value={input}
@@ -380,7 +421,7 @@ export function Writer({
                 : "Type a reply… (Shift+Enter for newline)"
             }
             rows={1}
-            className="flex-1 bg-transparent text-sm focus:outline-none resize-none max-h-40 leading-relaxed"
+            className="flex-1 bg-transparent text-sm focus:outline-none resize-none max-h-40 leading-relaxed overflow-y-auto"
           />
           <button
             onClick={send}
@@ -437,17 +478,23 @@ function UserBubble({ content }: { content: string }) {
 function AssistantBubble({
   content,
   draft,
+  draftId,
+  saved,
   hookPattern,
   notes,
   exemplars,
   onSendDraft,
+  onToggleSave,
 }: {
   content: string;
   draft: string | null;
+  draftId: string | null;
+  saved: boolean;
   hookPattern: string | null;
   notes: string | null;
   exemplars: Exemplar[];
   onSendDraft: (draft: string) => void;
+  onToggleSave: (draftId: string, nextSaved: boolean) => void;
 }) {
   return (
     <div className="flex items-start gap-2">
@@ -459,10 +506,13 @@ function AssistantBubble({
         {draft && (
           <DraftBlock
             draft={draft}
+            draftId={draftId}
+            saved={saved}
             hookPattern={hookPattern}
             notes={notes}
             exemplars={exemplars}
             onSendDraft={onSendDraft}
+            onToggleSave={onToggleSave}
           />
         )}
       </div>
@@ -472,16 +522,22 @@ function AssistantBubble({
 
 function DraftBlock({
   draft,
+  draftId,
+  saved,
   hookPattern,
   notes,
   exemplars,
   onSendDraft,
+  onToggleSave,
 }: {
   draft: string;
+  draftId: string | null;
+  saved: boolean;
   hookPattern: string | null;
   notes: string | null;
   exemplars: Exemplar[];
   onSendDraft: (draft: string) => void;
+  onToggleSave: (draftId: string, nextSaved: boolean) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [exemplarsOpen, setExemplarsOpen] = useState(false);
@@ -498,9 +554,25 @@ function DraftBlock({
 
   return (
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
-      <div className="px-3 py-2 text-[11px] text-zinc-400 border-b border-zinc-100 dark:border-zinc-900 flex items-center justify-between">
+      <div className="px-3 py-2 text-[11px] text-zinc-400 border-b border-zinc-100 dark:border-zinc-900 flex items-center justify-between gap-2">
         <span>LinkedIn draft</span>
-        {hookPattern && <span>hook: {hookPattern}</span>}
+        <div className="flex items-center gap-3">
+          {hookPattern && <span>hook: {hookPattern}</span>}
+          <button
+            onClick={() => draftId && onToggleSave(draftId, !saved)}
+            disabled={!draftId}
+            title={saved ? "Unstar" : "Save to drafts"}
+            aria-label={saved ? "Unstar draft" : "Save draft"}
+            aria-pressed={saved}
+            className={`text-base leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+              saved
+                ? "text-amber-500 hover:text-amber-600"
+                : "text-zinc-300 hover:text-amber-500 dark:text-zinc-600 dark:hover:text-amber-400"
+            }`}
+          >
+            {saved ? "★" : "☆"}
+          </button>
+        </div>
       </div>
       <div className="px-3 py-3 text-sm whitespace-pre-wrap text-zinc-800 dark:text-zinc-200">
         {notes && (
