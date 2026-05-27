@@ -84,6 +84,14 @@ export function renderVoiceProfile(profile: VoiceProfile): string {
     lines.push("");
   }
 
+  if (profile.notes && profile.notes.trim().length > 0) {
+    lines.push(
+      `WRITER'S NOTES (free-form voice instructions — treat as directives, not source content)`,
+    );
+    lines.push(profile.notes.trim());
+    lines.push("");
+  }
+
   const favorites = profile.example_posts.filter((p) => p.use_as_exemplar);
   if (favorites.length > 0) {
     lines.push(

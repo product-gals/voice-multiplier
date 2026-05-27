@@ -719,12 +719,15 @@ export function VoiceProfileEditor() {
       </SectionShell>
 
       {/* NOTES */}
-      <SectionShell title="Notes" subtitle="Anything else worth remembering.">
+      <SectionShell
+        title="Notes"
+        subtitle="Free-form voice instructions. Ozzy and Multiply read this on every turn — write the things that don't fit a structured field (e.g., 'talking to a friend over coffee', 'a bit weird and unconventional')."
+      >
         <TextArea
           value={profile.notes}
           onChange={(e) => update({ notes: e.target.value })}
-          placeholder="Free-form notes about your voice…"
-          rows={3}
+          placeholder="e.g., talking to a friend over coffee. A bit weird and unconventional. The truth about what AI is actually like, not the safe takes."
+          rows={4}
         />
       </SectionShell>
 
