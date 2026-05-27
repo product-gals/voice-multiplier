@@ -1,7 +1,56 @@
-import { VoiceProfile, humanize } from "@/lib/voice-profile";
+import {
+  PunctuationFreq,
+  VoiceProfile,
+  humanize,
+} from "@/lib/voice-profile";
 
 function bullets(items: string[]): string {
   return items.map((s) => `- ${s}`).join("\n");
+}
+
+// Per-punctuation imperatives. We render the version that matches the user's
+// setting so the model sees a directive ("NEVER use em dashes (—) …") instead
+// of a vague label ("Em dashes: forbidden") it can easily ignore.
+interface PunctRuleVariants {
+  forbidden: string;
+  sparing: string;
+  allowed: string;
+}
+
+const EM_DASH_RULE: PunctRuleVariants = {
+  forbidden:
+    `NEVER use em dashes (—), en dashes (–), or double hyphens (--) anywhere in the post. ` +
+    `If you would normally use one, use a period, a comma, a colon, or a line break instead. ` +
+    `This is the writer's #1 voice rule — violating it makes the post read as AI-written.`,
+  sparing:
+    `Use em dashes (—) very sparingly — at most once per post, and only when no other punctuation works as well.`,
+  allowed: `Em dashes (—) are allowed when they fit the rhythm.`,
+};
+
+const EXCLAIM_RULE: PunctRuleVariants = {
+  forbidden:
+    `NEVER use exclamation points (!). The writer's voice is dry, not enthusiastic — exclamation points break the tone.`,
+  sparing:
+    `Use exclamation points very sparingly — at most one per post, and only for genuine surprise or emphasis.`,
+  allowed: `Exclamation points are allowed when they fit the energy.`,
+};
+
+const ELLIPSIS_RULE: PunctRuleVariants = {
+  forbidden:
+    `NEVER use ellipses (... or …). They read as drifting or unsure — the writer's voice is direct.`,
+  sparing:
+    `Use ellipses (... or …) very sparingly — only for a deliberate trailing-off effect.`,
+  allowed: `Ellipses (... or …) are allowed when they fit the rhythm.`,
+};
+
+function renderPunctRule(
+  label: string,
+  freq: PunctuationFreq,
+  variants: PunctRuleVariants,
+): string {
+  // The label is kept so a human reading the prompt can scan the list; the
+  // imperative is what the model actually follows.
+  return `- ${label}: ${variants[freq]}`;
 }
 
 export function renderVoiceProfile(profile: VoiceProfile): string {
@@ -50,15 +99,25 @@ export function renderVoiceProfile(profile: VoiceProfile): string {
   }
 
   lines.push(`PUNCTUATION RULES`);
-  lines.push(`- Em dashes: ${profile.punctuation.em_dash}`);
-  lines.push(`- Exclamation points: ${profile.punctuation.exclamation}`);
-  lines.push(`- Ellipses: ${profile.punctuation.ellipsis}`);
+  lines.push(renderPunctRule("Em dash", profile.punctuation.em_dash, EM_DASH_RULE));
   lines.push(
-    `- All-lowercase preference: ${profile.punctuation.all_lowercase ? "yes" : "no"}`
+    renderPunctRule("Exclamation point", profile.punctuation.exclamation, EXCLAIM_RULE),
   );
   lines.push(
-    `- Emoji in body: ${profile.punctuation.emoji_in_body ? "allowed" : "forbidden"}`
+    renderPunctRule("Ellipsis", profile.punctuation.ellipsis, ELLIPSIS_RULE),
   );
+  if (profile.punctuation.all_lowercase) {
+    lines.push(
+      `- ALWAYS write in all lowercase. Do not capitalize the first word of sentences, proper nouns, or "I". This is a deliberate stylistic choice — never "correct" it.`,
+    );
+  } else {
+    lines.push(`- Use standard capitalization.`);
+  }
+  if (profile.punctuation.emoji_in_body) {
+    lines.push(`- Emoji in body: allowed, but use sparingly.`);
+  } else {
+    lines.push(`- NEVER use emoji in the post body.`);
+  }
   lines.push("");
 
   if (profile.signature_moves.length > 0) {

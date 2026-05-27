@@ -36,6 +36,12 @@ export function buildOzzySystem(
   mode: OzzyMode = "draft"
 ): string {
   const base = ozzyBase(profile);
+  // The HARD CONSTRAINTS recap pulls only the binary/forbidden voice rules
+  // and pins them to the very END of the system message — repetition at the
+  // tail of the prompt dominates model attention much more than a single
+  // mention buried mid-prompt. This is the fix for "Ozzy keeps slipping em
+  // dashes in even though the profile says forbidden."
+  const constraints = buildHardConstraints(profile);
 
   if (mode === "brainstorm") {
     return `${base}
@@ -45,7 +51,9 @@ The user clicked "Talk through an idea." They are NOT asking for a draft. They w
 - DO NOT draft a post yet. Set "draft" to null on every turn unless they explicitly say "draft it now", "let's write it", or similar.
 - Ask sharp questions that pull specifics out of them — a real moment, a real number, the contrarian take.
 - Offer 2-3 possible angles when you can see them — "you could go at this three ways: (a) ... (b) ... (c) ...". Let them pick.
-- When they pick an angle or give you enough material, ask once: "Want me to draft it?" Then wait for confirmation before drafting.`;
+- When they pick an angle or give you enough material, ask once: "Want me to draft it?" Then wait for confirmation before drafting.
+
+${constraints}`;
   }
 
   if (mode === "analyze") {
@@ -57,7 +65,9 @@ The user clicked "Analyze recent posts." You've been given their last several Li
 - On the FIRST turn (the auto-trigger), produce an honest, specific analysis in the "reply" field. Cover: what's working (their strongest 1-2 hooks/moves), what's weak (a pattern that's becoming a crutch, a hook that keeps falling flat, a topic getting stale), and 2-3 specific angles they haven't tried that fit their voice.
 - Be candid. No "great posts overall!" — that's useless. Reference specific posts by their content when you can.
 - Reply can be longer here (up to 8-10 sentences, structured with line breaks). This is the one exception to the 1-3 sentence rule.
-- After the initial analysis, follow-up turns return to normal length — answer questions, dig deeper on patterns they ask about.`;
+- After the initial analysis, follow-up turns return to normal length — answer questions, dig deeper on patterns they ask about.
+
+${constraints}`;
   }
 
   // mode === "draft" (default)
@@ -78,7 +88,47 @@ HOW THE DRAFTS WORK
 - The draft is the post body only, ready to paste. No "Here's the post:" intro, no commentary mixed in.
 
 USING THE PAST-POST EXEMPLARS
-When the user message contains a "PAST POSTS FROM THIS WRITER" block, use those as VOICE reference, not content. Do not copy phrases or anecdotes from them.`;
+When the user message contains a "PAST POSTS FROM THIS WRITER" block, use those as VOICE reference, not content. Do not copy phrases or anecdotes from them.
+
+${constraints}`;
+}
+
+// Pulls only the hard/binary voice rules from the profile and renders them
+// as imperatives. Lives at the END of the system prompt so it's the last
+// thing the model reads before generating — dramatically improves adherence
+// to forbidden-punctuation rules vs. relying on the mid-prompt PUNCTUATION
+// RULES block alone.
+function buildHardConstraints(profile: VoiceProfile): string {
+  const rules: string[] = [];
+  if (profile.punctuation.em_dash === "forbidden") {
+    rules.push(
+      `NO em dashes (—), en dashes (–), or double hyphens (--). Use a period, comma, colon, or line break instead. Check every line before returning.`,
+    );
+  }
+  if (profile.punctuation.exclamation === "forbidden") {
+    rules.push(`NO exclamation points (!). Use a period.`);
+  }
+  if (profile.punctuation.ellipsis === "forbidden") {
+    rules.push(`NO ellipses (... or …). End the sentence or use a period.`);
+  }
+  if (profile.punctuation.all_lowercase) {
+    rules.push(
+      `ALL LOWERCASE only. No capital letters anywhere — not at sentence starts, not for "I", not for proper nouns. This is deliberate; do not "correct" it.`,
+    );
+  }
+  if (!profile.punctuation.emoji_in_body) {
+    rules.push(`NO emoji in the post body.`);
+  }
+  if (profile.vocabulary.avoid.length > 0) {
+    const words = profile.vocabulary.avoid.map((v) => v.term).join(", ");
+    rules.push(
+      `NEVER use these words: ${words}. They flag the writing as AI-generated.`,
+    );
+  }
+  if (rules.length === 0) return "";
+  return `HARD CONSTRAINTS — VERIFY BEFORE YOU RETURN
+These are non-negotiable voice rules. Re-read your draft and check every one before calling the tool. A draft that violates any of these is broken, no matter how good the content is.
+${rules.map((r) => `- ${r}`).join("\n")}`;
 }
 
 export function buildAnalyzeTrigger(posts: CorpusPost[]): string {
