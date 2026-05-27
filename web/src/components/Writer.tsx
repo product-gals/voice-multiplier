@@ -27,6 +27,9 @@ export interface LoadedChat {
 interface WriterProps {
   chatId: string;
   loadedChat: LoadedChat | null;
+  // True while WriteWorkspace is fetching the selected chat. Lets us render a
+  // skeleton instead of the previous chat's messages or the empty-state CTAs.
+  loadingChat?: boolean;
   onAfterTurn: () => void;
   onSavedDraftsChanged: () => void;
 }
@@ -82,6 +85,7 @@ const ANALYZE_TRIGGER_LABEL = "Analyze my recent posts.";
 export function Writer({
   chatId,
   loadedChat,
+  loadingChat = false,
   onAfterTurn,
   onSavedDraftsChanged,
 }: WriterProps) {
@@ -139,8 +143,10 @@ export function Writer({
 
   // Sync local chat state to the parent-owned chat selection.
   // loadedChat = null means "fresh chat" (sidebar's + New chat); non-null means rehydrate from history.
+  // While loadingChat is true, also clear so we don't show the prior chat's
+  // bubbles under the skeleton.
   useEffect(() => {
-    if (!loadedChat) {
+    if (!loadedChat || loadingChat) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting on chat change
       setMessages([]);
       setMode("draft");
@@ -168,7 +174,7 @@ export function Writer({
     setInput("");
     setError(null);
     setLoading(false);
-  }, [loadedChat, chatId]);
+  }, [loadedChat, chatId, loadingChat]);
 
   const handleModelChange = (next: ModelId) => {
     setModel(next);
@@ -451,40 +457,46 @@ export function Writer({
         ref={scrollRef}
         className="flex-1 overflow-y-auto py-4 space-y-4 px-1"
       >
-        <AssistantBubble
-          content={INTRO_BY_MODE[mode]}
-          draft={null}
-          draftId={null}
-          saved={false}
-          hookPattern={null}
-          notes={null}
-          exemplars={[]}
-          onSendDraft={sendDraftToMultiplier}
-          onToggleSave={toggleSavedDraft}
-        />
-        {messages.length === 0 && !loading && (
-          <div className="pl-9 flex flex-wrap gap-2 pt-1">
-            <CtaChip
-              label="Write a new post"
-              icon="✎"
-              onClick={() => startMode("draft")}
-              active={mode === "draft"}
+        {loadingChat ? (
+          <ChatLoadingSkeleton />
+        ) : (
+          <>
+            <AssistantBubble
+              content={INTRO_BY_MODE[mode]}
+              draft={null}
+              draftId={null}
+              saved={false}
+              hookPattern={null}
+              notes={null}
+              exemplars={[]}
+              onSendDraft={sendDraftToMultiplier}
+              onToggleSave={toggleSavedDraft}
             />
-            <CtaChip
-              label="Talk through an idea"
-              icon="💭"
-              onClick={() => startMode("brainstorm")}
-              active={mode === "brainstorm"}
-            />
-            <CtaChip
-              label="Analyze recent posts"
-              icon="📊"
-              onClick={() => startMode("analyze")}
-              active={mode === "analyze"}
-            />
-          </div>
+            {messages.length === 0 && !loading && (
+              <div className="pl-9 flex flex-wrap gap-2 pt-1">
+                <CtaChip
+                  label="Write a new post"
+                  icon="✎"
+                  onClick={() => startMode("draft")}
+                  active={mode === "draft"}
+                />
+                <CtaChip
+                  label="Talk through an idea"
+                  icon="💭"
+                  onClick={() => startMode("brainstorm")}
+                  active={mode === "brainstorm"}
+                />
+                <CtaChip
+                  label="Analyze recent posts"
+                  icon="📊"
+                  onClick={() => startMode("analyze")}
+                  active={mode === "analyze"}
+                />
+              </div>
+            )}
+          </>
         )}
-        {messages.map((m, i) =>
+        {!loadingChat && messages.map((m, i) =>
           m.role === "user" ? (
             <UserBubble
               key={i}
@@ -572,7 +584,7 @@ export function Writer({
           />
           <button
             onClick={send}
-            disabled={!canSend}
+            disabled={!canSend || loadingChat}
             className="rounded-full bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 px-3 py-1 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           >
             Send
@@ -581,6 +593,34 @@ export function Writer({
         <p className="text-[10px] text-zinc-400 mt-1.5 px-1">
           Rate-limited to 6 turns per IP per 30 seconds.
         </p>
+      </div>
+    </div>
+  );
+}
+
+function ChatLoadingSkeleton() {
+  // Three shimmering bubbles that roughly mimic the layout of an assistant
+  // turn, a user turn, and a longer assistant turn. Hides the prior chat's
+  // content while the new one is in flight without dropping a blank canvas.
+  return (
+    <div className="space-y-4 animate-pulse">
+      <div className="flex items-start gap-2">
+        <div className="h-7 w-7 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0" />
+        <div className="flex-1 space-y-1.5 max-w-md">
+          <div className="h-3 w-3/4 rounded bg-zinc-200 dark:bg-zinc-800" />
+          <div className="h-3 w-1/2 rounded bg-zinc-200 dark:bg-zinc-800" />
+        </div>
+      </div>
+      <div className="flex justify-end">
+        <div className="h-8 w-48 rounded-2xl rounded-br-md bg-zinc-200 dark:bg-zinc-800" />
+      </div>
+      <div className="flex items-start gap-2">
+        <div className="h-7 w-7 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0" />
+        <div className="flex-1 space-y-1.5 max-w-md">
+          <div className="h-3 w-5/6 rounded bg-zinc-200 dark:bg-zinc-800" />
+          <div className="h-3 w-4/6 rounded bg-zinc-200 dark:bg-zinc-800" />
+          <div className="h-3 w-3/6 rounded bg-zinc-200 dark:bg-zinc-800" />
+        </div>
       </div>
     </div>
   );

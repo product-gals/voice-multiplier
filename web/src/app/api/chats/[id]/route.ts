@@ -23,11 +23,28 @@ export async function GET(_request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: chat, error: chatErr } = await supabase
-    .from("chats")
-    .select("id, title, mode, created_at, updated_at")
-    .eq("id", id)
-    .maybeSingle();
+  // Fire both queries in parallel — they don't depend on each other. RLS
+  // gates both to user_id = auth.uid() so an unauthorized chat returns no
+  // chat row and we short-circuit to 404 below.
+  const [chatRes, messagesRes] = await Promise.all([
+    supabase
+      .from("chats")
+      .select("id, title, mode, created_at, updated_at")
+      .eq("id", id)
+      .maybeSingle(),
+    // Nested select: drafts!chat_messages_draft_id_fkey grabs the linked draft
+    // row (if any) so we can surface saved_at to the client without a 2nd query.
+    supabase
+      .from("chat_messages")
+      .select(
+        "id, chat_id, role, content, mode_at_turn, draft, hook_pattern, notes, exemplars, draft_id, created_at, drafts(saved_at)",
+      )
+      .eq("chat_id", id)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  const { data: chat, error: chatErr } = chatRes;
+  const { data: messages, error: msgErr } = messagesRes;
 
   if (chatErr) {
     return NextResponse.json({ error: chatErr.message }, { status: 500 });
@@ -35,17 +52,6 @@ export async function GET(_request: Request, { params }: RouteContext) {
   if (!chat) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-
-  // Nested select: drafts!chat_messages_draft_id_fkey grabs the linked draft
-  // row (if any) so we can surface saved_at to the client without a 2nd query.
-  const { data: messages, error: msgErr } = await supabase
-    .from("chat_messages")
-    .select(
-      "id, chat_id, role, content, mode_at_turn, draft, hook_pattern, notes, exemplars, draft_id, created_at, drafts(saved_at)",
-    )
-    .eq("chat_id", id)
-    .order("created_at", { ascending: true });
-
   if (msgErr) {
     return NextResponse.json({ error: msgErr.message }, { status: 500 });
   }
