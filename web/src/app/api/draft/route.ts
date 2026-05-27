@@ -24,6 +24,15 @@ import {
 
 export const runtime = "nodejs";
 
+// Sidecar image attached to the latest user turn. Not persisted — disappears
+// on rehydration. Only the latest turn carries it; older turns in the history
+// were already sent without images, so the model never re-sees them.
+interface DraftImage {
+  media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+  // Base64 payload only (no data: URL prefix).
+  data: string;
+}
+
 interface DraftRequest {
   messages: ChatMessage[];
   profile: VoiceProfile;
@@ -31,6 +40,29 @@ interface DraftRequest {
   mode?: OzzyMode;
   chatId?: string;
   userMessageId?: string;
+  image?: DraftImage;
+}
+
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
+// Anthropic limit is 5MB per image. Base64 is ~4/3 the byte size; cap the
+// encoded length so we reject early without decoding.
+const MAX_IMAGE_BASE64_LEN = Math.ceil((5 * 1024 * 1024 * 4) / 3);
+
+function isValidImage(value: unknown): value is DraftImage {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.media_type !== "string" || !ALLOWED_IMAGE_TYPES.has(v.media_type)) {
+    return false;
+  }
+  if (typeof v.data !== "string" || v.data.length === 0) return false;
+  if (v.data.length > MAX_IMAGE_BASE64_LEN) return false;
+  return true;
 }
 
 function isValidMode(v: unknown): v is OzzyMode {
@@ -162,6 +194,17 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  const image: DraftImage | null =
+    body.image !== undefined ? (isValidImage(body.image) ? body.image : null) : null;
+  if (body.image !== undefined && image === null) {
+    return NextResponse.json(
+      {
+        error:
+          "image must be { media_type: jpeg|png|gif|webp, data: base64 string ≤5MB }",
+      },
+      { status: 400 }
+    );
+  }
   if (!profile || typeof profile !== "object") {
     return NextResponse.json(
       { error: "Voice profile is required" },
@@ -239,9 +282,27 @@ export async function POST(request: Request) {
 
   // Build the API messages: pass conversation history verbatim, but augment
   // ONLY the latest user message (with retrieved exemplars in draft mode, or
-  // the assembled analyze trigger in analyze mode).
-  const apiMessages = messages.map((m, i) => {
+  // the assembled analyze trigger in analyze mode). If an inspiration image
+  // is attached, the latest turn becomes a content-block array with the image
+  // first so the model sees it before reading the user's text.
+  const apiMessages: Anthropic.MessageParam[] = messages.map((m, i) => {
     if (i === messages.length - 1 && m.role === "user") {
+      if (image) {
+        return {
+          role: "user" as const,
+          content: [
+            {
+              type: "image" as const,
+              source: {
+                type: "base64" as const,
+                media_type: image.media_type,
+                data: image.data,
+              },
+            },
+            { type: "text" as const, text: augmentedLatestUser },
+          ],
+        };
+      }
       return { role: "user" as const, content: augmentedLatestUser };
     }
     return { role: m.role, content: m.content };

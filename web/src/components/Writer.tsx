@@ -47,9 +47,26 @@ interface OzzyMeta {
   exemplars: Exemplar[];
 }
 
+// imageDataUrl is for inline UI rendering only — never persisted, never sent
+// back to the API on subsequent turns (only the current turn's image is sent,
+// inside the request's sidecar `image` field).
 type ChatMessage =
-  | { role: "user"; content: string }
+  | { role: "user"; content: string; imageDataUrl?: string }
   | ({ role: "assistant"; content: string } & OzzyMeta);
+
+interface AttachedImage {
+  dataUrl: string; // full data: URL for preview
+  base64: string; // payload only, for the API
+  mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+}
+
+const ALLOWED_IMAGE_MIME = new Set<AttachedImage["mediaType"]>([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 const INTRO_BY_MODE: Record<OzzyMode, string> = {
   draft:
@@ -76,6 +93,10 @@ export function Writer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<OzzyMode>("draft");
+  const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  // Counter so nested dragenter/dragleave on children don't flicker the overlay.
+  const dragDepth = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -160,17 +181,103 @@ export function Writer({
     [profile]
   );
 
-  const canSend = profile !== null && input.trim().length > 0 && !loading;
+  const canSend =
+    profile !== null &&
+    !loading &&
+    (input.trim().length > 0 || attachedImage !== null);
+
+  const readImageFile = (file: File): Promise<AttachedImage> =>
+    new Promise((resolve, reject) => {
+      if (!ALLOWED_IMAGE_MIME.has(file.type as AttachedImage["mediaType"])) {
+        reject(new Error("Only JPEG, PNG, GIF, or WEBP images are supported."));
+        return;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        reject(new Error("Image must be under 5MB."));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not read the image."));
+      reader.onload = () => {
+        const dataUrl = String(reader.result ?? "");
+        const comma = dataUrl.indexOf(",");
+        if (comma < 0) {
+          reject(new Error("Could not read the image."));
+          return;
+        }
+        resolve({
+          dataUrl,
+          base64: dataUrl.slice(comma + 1),
+          mediaType: file.type as AttachedImage["mediaType"],
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+
+  const acceptDroppedFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const image = Array.from(files).find((f) => f.type.startsWith("image/"));
+    if (!image) {
+      setError("Drop an image file (JPEG, PNG, GIF, or WEBP).");
+      return;
+    }
+    try {
+      const attached = await readImageFile(image);
+      setAttachedImage(attached);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not attach image.");
+    }
+  };
+
+  const onChatDragEnter = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer?.types ?? []).includes("Files")) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setIsDragging(true);
+  };
+  const onChatDragOver = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer?.types ?? []).includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const onChatDragLeave = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer?.types ?? []).includes("Files")) return;
+    e.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setIsDragging(false);
+  };
+  const onChatDrop = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer?.types ?? []).includes("Files")) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setIsDragging(false);
+    void acceptDroppedFiles(e.dataTransfer?.files ?? null);
+  };
 
   // Core send — uses a passed-in mode so CTA-triggered sends don't race with React state updates.
   const sendMessage = async (userText: string, sendMode: OzzyMode) => {
     if (!profile) return;
+    // Snapshot the attachment before we clear it so the in-flight request and
+    // the rendered user bubble both see the same image.
+    const pendingImage = attachedImage;
+    // Image-only sends still need *some* text so the API contract holds
+    // (content.length > 0) and so the model has a textual prompt to react to.
+    const effectiveText =
+      userText.trim().length > 0
+        ? userText
+        : "Use this image as inspiration for a post in my voice.";
     const nextMessages: ChatMessage[] = [
       ...messages,
-      { role: "user", content: userText },
+      {
+        role: "user",
+        content: effectiveText,
+        imageDataUrl: pendingImage?.dataUrl,
+      },
     ];
     setMessages(nextMessages);
     setInput("");
+    setAttachedImage(null);
     setLoading(true);
     setError(null);
 
@@ -201,6 +308,9 @@ export function Writer({
           mode: sendMode,
           chatId,
           userMessageId: crypto.randomUUID(),
+          image: pendingImage
+            ? { media_type: pendingImage.mediaType, data: pendingImage.base64 }
+            : undefined,
         }),
       });
       const data = await res.json();
@@ -301,7 +411,20 @@ export function Writer({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-12rem)] min-h-[32rem]">
+    <div
+      className="relative flex flex-col h-[calc(100vh-12rem)] min-h-[32rem]"
+      onDragEnter={onChatDragEnter}
+      onDragOver={onChatDragOver}
+      onDragLeave={onChatDragLeave}
+      onDrop={onChatDrop}
+    >
+      {isDragging && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-zinc-400 dark:border-zinc-500 bg-white/80 dark:bg-black/80 pointer-events-none">
+          <div className="text-sm text-zinc-600 dark:text-zinc-300">
+            Drop an image for Ozzy to read
+          </div>
+        </div>
+      )}
       <header className="flex items-center justify-between gap-3 pb-3 border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center gap-2.5 min-w-0">
           <OzzyAvatar size={40} speaking={loading} />
@@ -363,7 +486,11 @@ export function Writer({
         )}
         {messages.map((m, i) =>
           m.role === "user" ? (
-            <UserBubble key={i} content={m.content} />
+            <UserBubble
+              key={i}
+              content={m.content}
+              imageDataUrl={m.imageDataUrl}
+            />
           ) : (
             <AssistantBubble
               key={i}
@@ -407,6 +534,26 @@ export function Writer({
       </div>
 
       <div className="border-t border-zinc-200 dark:border-zinc-800 pt-3">
+        {attachedImage && (
+          <div className="mb-2 inline-flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1.5">
+            {/* eslint-disable-next-line @next/next/no-img-element -- local data URL, not a remote asset */}
+            <img
+              src={attachedImage.dataUrl}
+              alt="Attached"
+              className="h-10 w-10 rounded object-cover"
+            />
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              Image attached
+            </span>
+            <button
+              onClick={() => setAttachedImage(null)}
+              className="text-zinc-400 hover:text-rose-500 text-base leading-none px-1"
+              aria-label="Remove attached image"
+            >
+              ×
+            </button>
+          </div>
+        )}
         <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex items-end gap-2 px-3 py-2 focus-within:border-zinc-400 dark:focus-within:border-zinc-600 transition-colors">
           <textarea
             ref={inputRef}
@@ -465,11 +612,25 @@ function CtaChip({
   );
 }
 
-function UserBubble({ content }: { content: string }) {
+function UserBubble({
+  content,
+  imageDataUrl,
+}: {
+  content: string;
+  imageDataUrl?: string;
+}) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[80%] rounded-2xl rounded-br-md bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 px-3 py-2 text-sm whitespace-pre-wrap">
-        {content}
+      <div className="max-w-[80%] rounded-2xl rounded-br-md bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 px-3 py-2 text-sm whitespace-pre-wrap space-y-2">
+        {imageDataUrl && (
+          // eslint-disable-next-line @next/next/no-img-element -- local data URL, not a remote asset
+          <img
+            src={imageDataUrl}
+            alt="Attached"
+            className="max-h-64 rounded-lg object-cover"
+          />
+        )}
+        {content && <div>{content}</div>}
       </div>
     </div>
   );
