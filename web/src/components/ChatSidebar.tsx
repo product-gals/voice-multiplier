@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import type { ChatSummary } from "@/lib/chat-history";
-import { PENDING_SOURCE_KEY } from "@/lib/handoff";
 
 interface ChatSidebarProps {
   currentChatId: string;
@@ -30,7 +28,6 @@ export function ChatSidebar({
   onNew,
   onDeleted,
 }: ChatSidebarProps) {
-  const router = useRouter();
   const [chats, setChats] = useState<ChatSummary[] | null>(null);
   const [savedDrafts, setSavedDrafts] = useState<SavedDraft[] | null>(null);
   const [authed, setAuthed] = useState(true);
@@ -108,13 +105,21 @@ export function ChatSidebar({
     }
   };
 
-  const handleSendToMultiplier = (output: string) => {
+  const handleOpenDraftInChat = async (draftId: string) => {
     try {
-      window.sessionStorage.setItem(PENDING_SOURCE_KEY, output);
+      const res = await fetch(`/api/drafts/${draftId}/open-chat`, {
+        method: "POST",
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { chatId: string; seeded: boolean };
+      if (data.seeded) {
+        // New chat row was created server-side; refresh sidebar so it shows up.
+        loadChats();
+      }
+      onSelect(data.chatId);
     } catch {
-      // ignore quota errors
+      // ignore — sidebar stays put
     }
-    router.push("/");
   };
 
   if (!authed) return null;
@@ -196,8 +201,8 @@ export function ChatSidebar({
           {savedDrafts?.map((d) => (
             <button
               key={d.id}
-              onClick={() => handleSendToMultiplier(d.output)}
-              title="Send to Multiply"
+              onClick={() => handleOpenDraftInChat(d.id)}
+              title="Open in chat"
               className="group w-full text-left px-3 py-2 text-xs flex items-start gap-2 transition-colors text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 border-l-2 border-transparent"
             >
               <span className="text-amber-500 shrink-0 leading-snug">★</span>
