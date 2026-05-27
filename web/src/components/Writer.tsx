@@ -500,7 +500,7 @@ function AssistantBubble({
     <div className="flex items-start gap-2">
       <OzzyAvatar size={28} />
       <div className="flex-1 min-w-0 space-y-2">
-        <div className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
+        <div className="max-w-md text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-snug">
           {content}
         </div>
         {draft && (
@@ -553,7 +553,7 @@ function DraftBlock({
   };
 
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+    <div className="max-w-md rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
       <div className="px-3 py-2 text-[11px] text-zinc-400 border-b border-zinc-100 dark:border-zinc-900 flex items-center justify-between gap-2">
         <span>LinkedIn draft</span>
         <div className="flex items-center gap-3">
@@ -574,7 +574,7 @@ function DraftBlock({
           </button>
         </div>
       </div>
-      <div className="px-3 py-3 text-sm whitespace-pre-wrap text-zinc-800 dark:text-zinc-200">
+      <div className="px-3 py-3 text-[13px] leading-snug whitespace-pre-wrap text-zinc-800 dark:text-zinc-200">
         {notes && (
           <div className="mb-3 text-zinc-500 dark:text-zinc-400 text-[11px] italic border-l-2 border-zinc-300 dark:border-zinc-700 pl-2">
             {notes}
