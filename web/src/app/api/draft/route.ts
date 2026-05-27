@@ -266,9 +266,12 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
-  } else if (mode === "draft") {
-    // Per-turn BM25 retrieval. Skipped for brainstorm/analyze where exemplars
-    // would muddy the conversation.
+  } else if (mode === "draft" || mode === "template") {
+    // Per-turn BM25 retrieval. In draft mode, exemplars guide voice/cadence.
+    // In template mode, they give Ozzy real moments from the writer's recent
+    // work to propose as slot-fillers ("you posted about X last week — want
+    // to angle this one off the same thing?") instead of asking the writer
+    // to generate from scratch.
     try {
       exemplars = await searchUserCorpus(supabase, user.id, latestUser.content, 5);
       augmentedLatestUser = buildOzzyUserTurn(latestUser.content, exemplars);
