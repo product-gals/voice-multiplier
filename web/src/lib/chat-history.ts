@@ -5,12 +5,19 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type OzzyMode = "draft" | "brainstorm" | "analyze";
+// Re-export so consumers (Writer, WriteWorkspace, etc.) can import OzzyMode
+// from one place — but the canonical definition lives in draft-prompts so it
+// stays in sync with the prompt-assembly logic.
+export type { OzzyMode } from "@/lib/draft-prompts";
+import type { OzzyMode } from "@/lib/draft-prompts";
 
 export interface ChatSummary {
   id: string;
   title: string;
   mode: OzzyMode;
+  // Set only when the chat was started from a template (mode === 'template').
+  // Plain string key into web/src/lib/templates.ts; null otherwise.
+  template_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -58,16 +65,19 @@ interface UpsertChatArgs {
   userId: string;
   title: string;
   mode: OzzyMode;
+  // Only set when starting a template chat. Stored on first turn and never
+  // changed afterward (templates are a per-chat choice, not per-turn).
+  templateId?: string | null;
 }
 
 // Creates the chat row on first turn, no-ops on later turns, then bumps mode
 // and updated_at so the sidebar re-orders by recency. Fire-and-forget.
 export function upsertChat(args: UpsertChatArgs): void {
-  const { supabase, id, userId, title, mode } = args;
+  const { supabase, id, userId, title, mode, templateId = null } = args;
   void supabase
     .from("chats")
     .upsert(
-      { id, user_id: userId, title, mode },
+      { id, user_id: userId, title, mode, template_id: templateId },
       { onConflict: "id", ignoreDuplicates: true },
     )
     .then(({ error }) => {

@@ -29,7 +29,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const [chatRes, messagesRes] = await Promise.all([
     supabase
       .from("chats")
-      .select("id, title, mode, created_at, updated_at")
+      .select("id, title, mode, template_id, created_at, updated_at")
       .eq("id", id)
       .maybeSingle(),
     // Nested select: drafts!chat_messages_draft_id_fkey grabs the linked draft

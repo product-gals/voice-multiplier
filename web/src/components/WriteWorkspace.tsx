@@ -6,7 +6,7 @@ import { Writer, type LoadedChat } from "@/components/Writer";
 import type { OzzyMode, StoredMessage } from "@/lib/chat-history";
 
 interface ChatPayload {
-  chat: { id: string; mode: OzzyMode };
+  chat: { id: string; mode: OzzyMode; template_id: string | null };
   messages: StoredMessage[];
 }
 
@@ -55,6 +55,7 @@ export function WriteWorkspace() {
           chatId: id,
           messages: data.messages,
           mode: data.chat.mode,
+          templateId: data.chat.template_id,
         });
         setLoadingChatId(null);
       } catch {

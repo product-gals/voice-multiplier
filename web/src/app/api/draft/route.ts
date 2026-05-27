@@ -21,6 +21,7 @@ import {
   upsertChat,
   type StoredExemplar,
 } from "@/lib/chat-history";
+import { findTemplate, PostTemplate } from "@/lib/templates";
 
 export const runtime = "nodejs";
 
@@ -41,6 +42,10 @@ interface DraftRequest {
   chatId?: string;
   userMessageId?: string;
   image?: DraftImage;
+  // Only meaningful when mode === 'template'. Plain string key from
+  // web/src/lib/templates.ts — validated server-side. Snapshot per-chat on
+  // first turn, then read back from the chat row on later turns.
+  templateId?: string;
 }
 
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -66,7 +71,9 @@ function isValidImage(value: unknown): value is DraftImage {
 }
 
 function isValidMode(v: unknown): v is OzzyMode {
-  return v === "draft" || v === "brainstorm" || v === "analyze";
+  return (
+    v === "draft" || v === "brainstorm" || v === "analyze" || v === "template"
+  );
 }
 
 interface OzzyReply {
@@ -212,6 +219,27 @@ export async function POST(request: Request) {
     );
   }
 
+  // Template mode requires a known template id. Reject unknown ids early so
+  // we don't silently degrade to plain draft mode (which would confuse the
+  // user — they picked a template for a reason).
+  let template: PostTemplate | null = null;
+  if (mode === "template") {
+    if (typeof body.templateId !== "string") {
+      return NextResponse.json(
+        { error: "Template mode requires templateId" },
+        { status: 400 }
+      );
+    }
+    const found = findTemplate(body.templateId);
+    if (!found) {
+      return NextResponse.json(
+        { error: `Unknown template: ${body.templateId}` },
+        { status: 400 }
+      );
+    }
+    template = found;
+  }
+
   const latestUser = messages[messages.length - 1];
 
   let exemplars: ScoredPost[] = [];
@@ -266,8 +294,12 @@ export async function POST(request: Request) {
       supabase,
       id: persist.chatId,
       userId: user.id,
-      title: deriveChatTitle(latestUser.content),
+      title:
+        template !== null
+          ? `[${template.name}] ${deriveChatTitle(latestUser.content)}`
+          : deriveChatTitle(latestUser.content),
       mode,
+      templateId: template?.id ?? null,
     });
     logChatTurn({
       supabase,
@@ -309,7 +341,7 @@ export async function POST(request: Request) {
   });
 
   const client = new Anthropic();
-  const systemPrompt = buildOzzySystem(profile, mode);
+  const systemPrompt = buildOzzySystem(profile, mode, template);
 
   // TEMP DEBUG — confirm the voice constraints actually reach the model.
   // Logs the saved punctuation enums and the PUNCTUATION RULES block from the

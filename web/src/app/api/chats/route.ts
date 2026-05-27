@@ -15,7 +15,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("chats")
-    .select("id, title, mode, created_at, updated_at")
+    .select("id, title, mode, template_id, created_at, updated_at")
     .order("updated_at", { ascending: false })
     .limit(100);
 

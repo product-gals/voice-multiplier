@@ -1,8 +1,9 @@
 import { VoiceProfile } from "@/lib/voice-profile";
 import { renderVoiceProfile } from "@/lib/voice-renderer";
 import { CorpusPost, ScoredPost } from "@/lib/corpus";
+import { BUCKETS, PostTemplate } from "@/lib/templates";
 
-export type OzzyMode = "draft" | "brainstorm" | "analyze";
+export type OzzyMode = "draft" | "brainstorm" | "analyze" | "template";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -33,7 +34,8 @@ Every turn, call the \`ozzy_reply\` tool with your structured response. The "rep
 
 export function buildOzzySystem(
   profile: VoiceProfile,
-  mode: OzzyMode = "draft"
+  mode: OzzyMode = "draft",
+  template: PostTemplate | null = null,
 ): string {
   const base = ozzyBase(profile);
   // The HARD CONSTRAINTS recap pulls only the binary/forbidden voice rules
@@ -66,6 +68,35 @@ The user clicked "Analyze recent posts." You've been given their last several Li
 - Be candid. No "great posts overall!" — that's useless. Reference specific posts by their content when you can.
 - Reply can be longer here (up to 8-10 sentences, structured with line breaks). This is the one exception to the 1-3 sentence rule.
 - After the initial analysis, follow-up turns return to normal length — answer questions, dig deeper on patterns they ask about.
+
+${constraints}`;
+  }
+
+  if (mode === "template" && template) {
+    const bucket = BUCKETS[template.bucket];
+    const slotsList = template.slots.map((s) => `  - [${s}]`).join("\n");
+    return `${base}
+
+MODE: TEMPLATE
+The user picked a structural template to try. Your job: help them fill it in their voice, then draft a post that follows the structure exactly.
+
+TEMPLATE: ${template.name} (${bucket.label} bucket)
+Pattern:
+  ${template.pattern}
+
+Slots to fill:
+${slotsList}
+
+Bucket payoff — what a reader of a ${bucket.label} post should walk away thinking: "${bucket.payoff}"
+(${bucket.description})
+
+HOW TO RUN A TEMPLATE TURN
+- On the FIRST user message: if they gave you enough material to fill every slot, draft it immediately. If slots are still empty after reading their message, ask ONE focused question that pulls the missing piece(s) out of them — combine related slots into one question, don't run them down the list robotically.
+- Keep questions sharp and specific to the slot. Bad: "what's your story?" Good: "what's the dark truth you'd only say to a friend, not your audience?"
+- When you have enough to draft, DRAFT IT. Don't keep asking.
+- The draft MUST follow the pattern structurally — same beats, same order, same shape. Substitute the [slots] with the user's specifics; you can lightly bridge the slots into prose, but don't restructure the post or add new sections.
+- The voice profile still rules. Match their cadence, rhythm, and punctuation rules. The template is a skeleton; the writer's voice is the muscle.
+- If the user's revision feedback ("make it shorter", "lead with the number") would break the structure, do your best to honor both — but the template structure wins if there's a real conflict, since they picked it on purpose. Mention the tradeoff in your reply if you had to bend something.
 
 ${constraints}`;
   }

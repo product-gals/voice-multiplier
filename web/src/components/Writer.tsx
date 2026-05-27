@@ -17,11 +17,17 @@ import { ModelSelector } from "@/components/ModelSelector";
 import { OzzyAvatar } from "@/components/OzzyAvatar";
 import { PENDING_SOURCE_KEY } from "@/lib/handoff";
 import type { OzzyMode, StoredMessage } from "@/lib/chat-history";
+import { findTemplate, type PostTemplate } from "@/lib/templates";
+import { TemplatePicker } from "@/components/TemplatePicker";
 
 export interface LoadedChat {
   chatId: string;
   messages: StoredMessage[];
   mode: OzzyMode;
+  // Set when the chat was started from a template; null otherwise. The chat
+  // detail API returns this and we rehydrate it so the right template prompt
+  // is reapplied on every subsequent turn.
+  templateId: string | null;
 }
 
 interface WriterProps {
@@ -78,6 +84,8 @@ const INTRO_BY_MODE: Record<OzzyMode, string> = {
     "Cool — let's think out loud. Tell me the idea you're chewing on, even if it's vague. I'll help you find the sharp angle before we write anything.",
   analyze:
     "Pulling your recent posts now — I'll tell you what's working, what's getting stale, and where you've got room to swing.",
+  template:
+    "Picked a template. Tell me the story or the specifics — I'll fill in the [slots] and draft it in your voice.",
 };
 
 const ANALYZE_TRIGGER_LABEL = "Analyze my recent posts.";
@@ -99,6 +107,11 @@ export function Writer({
   const [mode, setMode] = useState<OzzyMode>("draft");
   const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // Templates are a per-chat choice (you pick one when starting a chat, then
+  // every turn in that chat uses it). On rehydration we re-derive from
+  // loadedChat.templateId; on a fresh chat the picker sets it.
+  const [template, setTemplate] = useState<PostTemplate | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   // Counter so nested dragenter/dragleave on children don't flicker the overlay.
   const dragDepth = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -153,8 +166,10 @@ export function Writer({
       setInput("");
       setError(null);
       setLoading(false);
+      setTemplate(null);
       return;
     }
+    setTemplate(loadedChat.templateId ? findTemplate(loadedChat.templateId) ?? null : null);
     const rehydrated: ChatMessage[] = loadedChat.messages.map((m) =>
       m.role === "assistant"
         ? {
@@ -311,7 +326,11 @@ export function Writer({
           messages: apiMessages,
           profile,
           model,
-          mode: sendMode,
+          // If a template is active for this chat, every turn runs in template
+          // mode regardless of the caller-passed sendMode. This handles
+          // CTA-triggered sends from any flow.
+          mode: template ? "template" : sendMode,
+          templateId: template?.id,
           chatId,
           userMessageId: crypto.randomUUID(),
           image: pendingImage
@@ -492,6 +511,12 @@ export function Writer({
                   onClick={() => startMode("analyze")}
                   active={mode === "analyze"}
                 />
+                <CtaChip
+                  label="Try a template"
+                  icon="🧩"
+                  onClick={() => setPickerOpen(true)}
+                  active={template !== null}
+                />
               </div>
             )}
           </>
@@ -546,6 +571,26 @@ export function Writer({
       </div>
 
       <div className="border-t border-zinc-200 dark:border-zinc-800 pt-3">
+        {template && (
+          <div className="mb-2 inline-flex items-center gap-2 rounded-lg border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50 dark:bg-indigo-950/30 px-2.5 py-1.5">
+            <span className="text-xs text-indigo-700 dark:text-indigo-300">
+              <span className="font-medium">Template:</span> {template.name}
+            </span>
+            <button
+              onClick={() => setTemplate(null)}
+              disabled={messages.length > 0}
+              title={
+                messages.length > 0
+                  ? "Start a new chat to drop this template"
+                  : "Remove template"
+              }
+              className="text-indigo-400 hover:text-rose-500 text-base leading-none px-1 disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Remove template"
+            >
+              ×
+            </button>
+          </div>
+        )}
         {attachedImage && (
           <div className="mb-2 inline-flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1.5">
             {/* eslint-disable-next-line @next/next/no-img-element -- local data URL, not a remote asset */}
@@ -594,6 +639,16 @@ export function Writer({
           Rate-limited to 6 turns per IP per 30 seconds.
         </p>
       </div>
+      <TemplatePicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPick={(t) => {
+          setTemplate(t);
+          setMode("template");
+          // Focus the input so the user can immediately tell Ozzy their angle.
+          setTimeout(() => inputRef.current?.focus(), 0);
+        }}
+      />
     </div>
   );
 }
