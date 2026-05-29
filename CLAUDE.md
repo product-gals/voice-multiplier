@@ -65,7 +65,7 @@ The model **must** return JSON matching `{ output, fit_score, fit_flag, char_cou
 
 ### Models
 
-[web/src/lib/model-settings.ts](web/src/lib/model-settings.ts) defines the three selectable models (Opus 4.7, Sonnet 4.6, Haiku 4.5). Generator default is `claude-sonnet-4-6`; onboarding extractor is hardcoded to `claude-haiku-4-5`. User's selection is persisted to `localStorage` under `multiplier_model_v1`. Always validate incoming model IDs with `isValidModel` — the API route falls back to the default if the request specifies an unknown one.
+[web/src/lib/model-settings.ts](web/src/lib/model-settings.ts) defines the three selectable models (Opus 4.8, Sonnet 4.6, Haiku 4.5). Generator default is `claude-sonnet-4-6`; onboarding extractor is hardcoded to `claude-haiku-4-5`. User's selection is persisted to `localStorage` under `multiplier_model_v1`. Always validate incoming model IDs with `isValidModel` — the API route falls back to the default if the request specifies an unknown one.
 
 ### Rate limiting
 

@@ -1,10 +1,10 @@
 export type ModelId =
-  | "claude-opus-4-7"
+  | "claude-opus-4-8"
   | "claude-sonnet-4-6"
   | "claude-haiku-4-5";
 
 export const MODEL_OPTIONS: { id: ModelId; label: string; tagline: string }[] = [
-  { id: "claude-opus-4-7", label: "Opus 4.7", tagline: "highest quality, slowest" },
+  { id: "claude-opus-4-8", label: "Opus 4.8", tagline: "highest quality, slowest" },
   { id: "claude-sonnet-4-6", label: "Sonnet 4.6", tagline: "balanced speed and quality" },
   { id: "claude-haiku-4-5", label: "Haiku 4.5", tagline: "fast and cheap" },
 ];
